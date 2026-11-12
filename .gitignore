@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tests and tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Django
+*.log
+db.sqlite3
+/backend/staticfiles/
+/backend/media/
+
+# Environment variables (secrets)
+.env
+.env.*
+!.env.example
+
+# Celery
+celerybeat-schedule*
+celerybeat.pid
+
+# Editors and OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
