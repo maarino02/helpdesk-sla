@@ -88,7 +88,9 @@ erDiagram
         timestamptz resolution_due_at
         timestamptz sla_paused_at "set while the clock is paused"
         timestamptz first_response_at
+        int first_response_business_minutes "set on first response"
         timestamptz resolved_at
+        int resolution_business_minutes "set on resolution"
         timestamptz closed_at
         timestamptz created_at
         timestamptz updated_at
@@ -134,9 +136,9 @@ erDiagram
 | `business_hours` | Working time slots per weekday. | Several rows per day allow split shifts. |
 | `holiday` | Non-working days. | Belong to a calendar, so each client can have its own regional holidays. |
 | `sla_policy` | Deadlines per priority. | `organization_id = NULL` is the default policy; a non-null value is a client-specific agreement. |
-| `ticket` | The incident. | Stores the computed SLA deadlines (`*_due_at`), the start of the current pause and the key timestamps. |
+| `ticket` | The incident. | Stores the computed SLA deadlines (`*_due_at`), the start of the current pause, the key timestamps and the business minutes consumed until the first response and the resolution (see ADR-0002). |
 | `ticket_comment` | Ticket conversation. | `is_internal` marks agent-only notes. |
-| `ticket_event` | Change history. | Append-only. `actor_id = NULL` means a system action. |
+| `ticket_event` | Change history. | Append-only. `actor_id = NULL` means a system action, such as an `sla_recalculated` event after a calendar change. |
 | `sla_alert` | Alerts already raised. | Its unique key guarantees each alert is raised only once. |
 
 ## Integrity constraints
@@ -146,6 +148,7 @@ erDiagram
 | `user` | `CHECK ((role = 'client') = (organization_id IS NOT NULL))` | Role and organization are consistent. |
 | `ticket` | `CHECK` on `priority` and `status` values | Valid values even when writing outside Django. |
 | `ticket` | `CHECK (status <> 'closed' OR closed_at IS NOT NULL)`, same idea for `resolved_at` | Timestamps match the status. |
+| `ticket` | `CHECK ((first_response_at IS NULL) = (first_response_business_minutes IS NULL))`, same idea for `resolved_at` and `resolution_business_minutes` | A business duration exists only when its timestamp does. |
 | `ticket` | `UNIQUE (organization_id, number)` | Unique ticket numbers per client. |
 | `ticket` | `UNIQUE (id, organization_id)` | Target for the composite foreign keys below. |
 | `ticket_comment`, `ticket_event`, `sla_alert` | `FOREIGN KEY (ticket_id, organization_id) REFERENCES ticket (id, organization_id)` | The denormalized `organization_id` can never contradict the ticket's. Created with `RunSQL`, since Django does not support composite foreign keys. |

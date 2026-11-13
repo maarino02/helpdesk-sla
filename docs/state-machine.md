@@ -36,12 +36,13 @@ stateDiagram-v2
 | `new` → `open` | Agent or admin; automatic on the first public agent reply | Assigns the agent if the ticket is unassigned. |
 | `open` → `pending` | Agent or admin | Pauses the resolution clock: `sla_paused_at = now()`. |
 | `pending` → `open` | Automatic when the client comments; also agent | Resumes the clock: extends `resolution_due_at` by the paused business minutes and clears `sla_paused_at`. |
-| `open` → `resolved` | Agent or admin | Sets `resolved_at` and pauses the clock. |
-| `pending` → `resolved` | Agent or admin | Adds the paused time to the deadline before setting `resolved_at`; the clock stays stopped. |
-| `resolved` → `open` | Client (reopens) or agent | Extends the deadline by the time spent in `resolved`, clears `resolved_at` and `sla_paused_at`. |
+| `open` → `resolved` | Agent or admin | Sets `resolved_at` and `resolution_business_minutes`, and pauses the clock. |
+| `pending` → `resolved` | Agent or admin | Adds the paused time to the deadline before setting `resolved_at` and `resolution_business_minutes`; the clock stays stopped. |
+| `resolved` → `open` | Client (reopens) or agent | Extends the deadline by the time spent in `resolved`, clears `resolved_at`, `resolution_business_minutes` and `sla_paused_at`. |
 | `resolved` → `closed` | Client (confirms) or system after 7 days | Sets `closed_at`. Auto-close runs as a background job with no actor. |
 
-Any other combination is rejected as an invalid transition (HTTP 409).
+Any other combination is rejected with `409 Conflict`. A transition that exists but
+is not allowed for the actor's role is rejected with `403 Forbidden` (see ADR-0003).
 Every transition records a `status_changed` event in `ticket_event`.
 
 ## SLA rules
@@ -50,12 +51,16 @@ Every transition records a `status_changed` event in `ticket_event`.
   paused in `pending` and `resolved`, so agents are not penalized while waiting for
   the client.
 - **First response.** The first public comment written by an agent. Internal notes do
-  not stop this clock.
+  not stop this clock. The business minutes consumed until then are stored in
+  `first_response_business_minutes`.
 - **Deadline calculation.** On creation, the policy duration is added in business
   minutes to the creation time, using the client's calendar. A ticket created outside
   business hours starts counting at the next working slot.
 - **Priority change.** The difference between the new and the old duration is applied,
   in business minutes, to the current deadlines, so pauses already accumulated are kept.
+- **Calendar changes.** If a holiday is added or working hours change, the remaining
+  business time of tickets with a running or paused clock is projected again with the new
+  calendar. Expired deadlines are never modified. See ADR-0002.
 - **Compliance.** A response is compliant if `first_response_at <= first_response_due_at`,
   and a resolution if `resolved_at <= resolution_due_at`. Since deadlines already include
   pauses, the dashboard only needs to compare columns.
@@ -65,7 +70,8 @@ Every transition records a `status_changed` event in `ticket_event`.
 ## Implementation
 
 All transitions go through a single service function,
-`transition(ticket, to_status, actor)`. Inside one database transaction it:
+`transition(ticket, to_status, actor)`, exposed in the API as
+`POST /api/tickets/{id}/transitions/`. Inside one database transaction it:
 
 1. Locks the ticket row with `select_for_update()`.
 2. Checks the allowed transitions table and the actor's role.
