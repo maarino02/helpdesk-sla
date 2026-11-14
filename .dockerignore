@@ -1,0 +1,14 @@
+# Allow list: ignore everything, then let in only what the image needs.
+# Secrets (.env), git history and local files can never reach the build context,
+# even when someone adds a new file and forgets to list it here.
+*
+!backend/
+!docker/
+!pyproject.toml
+!uv.lock
+
+# Generated files that may exist inside the allowed folders.
+**/__pycache__
+**/*.pyc
+backend/staticfiles
+backend/celerybeat-schedule*
