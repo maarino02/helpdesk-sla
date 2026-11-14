@@ -14,6 +14,8 @@ authentication or row-level security context.
 
 import logging
 
+import redis
+from django.conf import settings
 from django.db import DatabaseError, connection
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
@@ -28,7 +30,7 @@ def live(request):
 
 @require_GET
 def ready(request):
-    checks = {"database": _check_database()}
+    checks = {"database": _check_database(), "redis": _check_redis()}
     healthy = all(result == "ok" for result in checks.values())
     return JsonResponse(
         {"status": "ok" if healthy else "unavailable", "checks": checks},
@@ -47,4 +49,19 @@ def _check_database():
         # hosts, users or versions.
         logger.exception("Readiness check failed: database unreachable")
         return "error"
+    return "ok"
+
+
+def _check_redis():
+    # Short timeouts: without them a network problem would hang the request
+    # instead of reporting "unavailable". A client per call is fine for a health
+    # check; regular code should share a connection pool.
+    client = redis.Redis.from_url(settings.REDIS_URL, socket_connect_timeout=2, socket_timeout=2)
+    try:
+        client.ping()
+    except redis.RedisError:
+        logger.exception("Readiness check failed: Redis unreachable")
+        return "error"
+    finally:
+        client.close()
     return "ok"
