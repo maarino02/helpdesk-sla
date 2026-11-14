@@ -1,0 +1,10 @@
+import pytest
+from django.db import connection
+
+pytestmark = pytest.mark.django_db
+
+
+def test_database_is_postgresql_17():
+    # pg_version is an integer: 170005 means 17.5.
+    assert connection.vendor == "postgresql"
+    assert connection.pg_version // 10000 == 17

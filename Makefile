@@ -4,7 +4,7 @@
 # PowerShell, cmd and sh, so this file works on Windows, macOS, Linux and in CI.
 # Keep shell logic (conditionals, loops, rm...) out of the recipes.
 
-.PHONY: up down ps logs psql run migrate makemigrations
+.PHONY: up down ps logs psql run migrate makemigrations test
 
 # Start the services in the background and wait until their healthchecks pass.
 up:
@@ -33,3 +33,8 @@ migrate:
 
 makemigrations:
 	uv run backend/manage.py makemigrations
+
+# Test suite. Needs the db container running (make up); pytest-django creates
+# and drops a separate test_<name> database.
+test:
+	uv run pytest
