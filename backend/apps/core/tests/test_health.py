@@ -1,6 +1,7 @@
 from unittest import mock
 
 import pytest
+import redis
 from django.db import OperationalError
 from django.urls import reverse
 
@@ -18,22 +19,39 @@ def test_live_returns_ok_without_touching_the_database(client):
 
 
 @pytest.mark.django_db
-def test_ready_returns_ok_when_database_is_reachable(client):
+def test_ready_returns_ok_when_dependencies_are_reachable(client):
     response = client.get(READY_URL)
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "checks": {"database": "ok"}}
+    assert response.json() == {"status": "ok", "checks": {"database": "ok", "redis": "ok"}}
 
 
 @pytest.mark.django_db
-def test_ready_returns_503_without_leaking_error_details(client):
+def test_ready_returns_503_when_database_fails_without_leaking_details(client):
     error = OperationalError("connection to server at 10.0.0.5 failed")
     with mock.patch("apps.core.views.connection.cursor", side_effect=error):
         response = client.get(READY_URL)
 
     assert response.status_code == 503
-    assert response.json() == {"status": "unavailable", "checks": {"database": "error"}}
+    assert response.json() == {
+        "status": "unavailable",
+        "checks": {"database": "error", "redis": "ok"},
+    }
     assert "10.0.0.5" not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_ready_returns_503_when_redis_fails_without_leaking_details(client):
+    error = redis.ConnectionError("Error connecting to 10.0.0.6:6379")
+    with mock.patch("apps.core.views.redis.Redis.ping", side_effect=error):
+        response = client.get(READY_URL)
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "status": "unavailable",
+        "checks": {"database": "ok", "redis": "error"},
+    }
+    assert "10.0.0.6" not in response.content.decode()
 
 
 @pytest.mark.parametrize("url", [LIVE_URL, READY_URL])
