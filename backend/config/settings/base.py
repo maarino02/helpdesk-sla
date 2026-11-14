@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Local apps
     "apps.accounts",
+    "apps.core",
 ]
 
 MIDDLEWARE = [
@@ -71,6 +72,12 @@ DATABASES = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Security
+# Health checks come from inside the container network over plain HTTP, without
+# the TLS proxy in between. When SECURE_SSL_REDIRECT is on (production), they
+# would get a 301 and fail. Defined here so tests exercise the real value.
+SECURE_REDIRECT_EXEMPT = [r"^health/"]
 
 # Authentication
 AUTH_USER_MODEL = "accounts.User"
