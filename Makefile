@@ -4,15 +4,21 @@
 # PowerShell, cmd and sh, so this file works on Windows, macOS, Linux and in CI.
 # Keep shell logic (conditionals, loops, rm...) out of the recipes.
 
-.PHONY: up down ps logs psql run migrate makemigrations test lint format worker beat
+.PHONY: up up-app down ps logs psql run migrate makemigrations test lint format worker beat
 
 # Start the services in the background and wait until their healthchecks pass.
 up:
 	docker compose up -d --wait
 
-# Stop and remove the containers. Data is kept in the named volume.
+# Full stack with the production image (migrate, web, worker, beat). Rebuilds the
+# image if the code changed. Do not use together with run/worker/beat on the host.
+up-app:
+	docker compose --profile app up -d --build --wait
+
+# Stop and remove the containers, including the app profile. Data is kept in the
+# named volume.
 down:
-	docker compose down
+	docker compose --profile app down
 
 ps:
 	docker compose ps

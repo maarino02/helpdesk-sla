@@ -1,5 +1,26 @@
 name: helpdesk-sla
 
+# Shared by the application services (migrate, web, worker, beat). They run the
+# production image to try it locally before deploying, and belong to the "app"
+# profile: "make up" still starts only db and redis for development on the host,
+# "make up-app" starts everything. Never run both stacks at once: two beats would
+# send every periodic task twice.
+x-app: &app
+  image: helpdesk-sla:local
+  build: .
+  profiles: [app]
+  # No env_file: .env points to 127.0.0.1, which inside a container is the
+  # container itself. Other services are reached by name on the compose network.
+  environment:
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env}
+    DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+    # No TLS locally. Secure cookies still work on http://localhost, which
+    # browsers treat as a secure context.
+    DJANGO_SECURE_SSL_REDIRECT: "false"
+    # connect_timeout: fail fast instead of hanging if the database stops answering.
+    DATABASE_URL: postgres://${POSTGRES_USER:-helpdesk}:${POSTGRES_PASSWORD:-helpdesk}@db:5432/${POSTGRES_DB:-helpdesk}?connect_timeout=5
+    REDIS_URL: redis://redis:6379/0
+
 services:
   db:
     # Debian-based image (not Alpine) so collations match CI and production.
@@ -35,6 +56,64 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # One-off: applies migrations and exits. The application services start only
+  # after it succeeds, so they never run against an outdated schema.
+  migrate:
+    <<: *app
+    command: migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    <<: *app
+    command: web
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on: &app-depends-on
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      # Liveness, not readiness: a database outage must not mark web unhealthy.
+      # Python instead of curl, which the slim image lacks; urlopen raises on
+      # any non-2xx response.
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen("http://localhost:8000/health/live/", timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    <<: *app
+    # One process per CPU by default (16 on a desktop); two is plenty locally.
+    command: [worker, --concurrency=2]
+    depends_on: *app-depends-on
+    restart: unless-stopped
+    healthcheck:
+      # Asks this worker (named after the container hostname) to reply through
+      # the broker. It starts a Python process, hence the long interval.
+      test: ["CMD-SHELL", "celery -A config inspect ping --destination celery@$$HOSTNAME --timeout 5"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 20s
+
+  # Exactly one beat. No healthcheck: it has no simple health signal, and
+  # restart brings it back if the process dies.
+  beat:
+    <<: *app
+    command: beat
+    depends_on: *app-depends-on
+    restart: unless-stopped
 
 volumes:
   pgdata:
