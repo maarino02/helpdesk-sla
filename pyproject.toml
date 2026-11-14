@@ -10,3 +10,42 @@ dependencies = [
     "django-environ>=0.14.0",
     "psycopg[binary]>=3.3.9",
 ]
+
+[dependency-groups]
+dev = [
+    "factory-boy>=3.3.3",
+    "pre-commit>=4.7.0",
+    "pytest>=9.2.0",
+    "pytest-django>=4.14.0",
+    "ruff>=0.17.5",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+# Make "config" and "apps" importable from the repository root, explicitly,
+# instead of letting pytest-django guess the project location from manage.py.
+pythonpath = ["backend"]
+django_find_project = false
+testpaths = ["backend"]
+
+[tool.ruff]
+line-length = 100
+# target-version is read from requires-python.
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes: undefined names, unused imports
+    "I",   # isort: import order
+    "B",   # flake8-bugbear: likely bugs (mutable defaults, ...)
+    "UP",  # pyupgrade: modern syntax for the target Python version
+    "DJ",  # flake8-django: Django-specific pitfalls
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Migrations are linted too (hand-written RunSQL ones matter), but generated ones
+# contain long strings (help_text, SQL) that the formatter cannot split.
+"**/migrations/*" = ["E501"]
