@@ -4,15 +4,21 @@
 # PowerShell, cmd and sh, so this file works on Windows, macOS, Linux and in CI.
 # Keep shell logic (conditionals, loops, rm...) out of the recipes.
 
-.PHONY: up down ps logs psql run migrate makemigrations test lint format
+.PHONY: up up-app down ps logs psql run migrate makemigrations test lint format worker beat
 
 # Start the services in the background and wait until their healthchecks pass.
 up:
 	docker compose up -d --wait
 
-# Stop and remove the containers. Data is kept in the named volume.
+# Full stack with the production image (migrate, web, worker, beat). Rebuilds the
+# image if the code changed. Do not use together with run/worker/beat on the host.
+up-app:
+	docker compose --profile app up -d --build --wait
+
+# Stop and remove the containers, including the app profile. Data is kept in the
+# named volume.
 down:
-	docker compose down
+	docker compose --profile app down
 
 ps:
 	docker compose ps
@@ -48,3 +54,12 @@ lint:
 format:
 	uv run ruff check --fix .
 	uv run ruff format .
+
+# Celery worker on the host. Windows does not support the default prefork pool,
+# so it runs with the single-process solo pool; containers use prefork.
+worker:
+	uv run celery --workdir backend -A config worker --pool=solo --loglevel=info
+
+# Periodic task scheduler. Run only one beat at a time, or tasks are sent twice.
+beat:
+	uv run celery --workdir backend -A config beat --loglevel=info

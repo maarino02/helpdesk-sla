@@ -37,6 +37,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serves static files from the application itself, with no separate web
+    # server. Right after SecurityMiddleware so static responses still get the
+    # security headers, and before everything else to skip unneeded work.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -72,6 +76,33 @@ DATABASES = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Redis
+# Required, like DATABASE_URL: a missing value fails at startup, not on the first task.
+REDIS_URL = env("REDIS_URL")
+
+# Celery
+CELERY_BROKER_URL = REDIS_URL
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+# JSON only: pickle would let anyone who can write to Redis run code in the worker.
+# It also forces tasks to receive ids instead of model instances.
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_TIMEZONE = "UTC"
+# Acknowledge a message only after the task finishes: if the worker dies midway,
+# the task runs again. Tasks must therefore be idempotent. Prefetching one message
+# at a time keeps unacknowledged work from piling up in a single worker.
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# Tasks write their outcome to the database; nobody reads return values.
+CELERY_TASK_IGNORE_RESULT = True
+# Periodic tasks live in code so they are versioned and reviewed like the rest.
+CELERY_BEAT_SCHEDULE = {
+    "ping": {
+        "task": "apps.core.tasks.ping",
+        "schedule": 300.0,  # seconds
+    },
+}
 
 # Security
 # Health checks come from inside the container network over plain HTTP, without

@@ -23,3 +23,12 @@ CSRF_COOKIE_SECURE = True
 # and would refuse plain HTTP for the whole period.
 SECURE_HSTS_SECONDS = env.int("DJANGO_SECURE_HSTS_SECONDS", default=0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False)
+
+# Static files: compressed copies plus a content hash in each file name
+# (base.css -> base.6f2a1c.css), so browsers can cache them forever and still
+# pick up changes. Requires collectstatic, which runs when building the image;
+# kept out of dev and test so they work without it.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
