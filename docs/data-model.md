@@ -10,17 +10,17 @@ erDiagram
     BUSINESS_CALENDAR ||--o{ ORGANIZATION : "contracted hours"
     BUSINESS_CALENDAR ||--|{ BUSINESS_HOURS : "defines"
     BUSINESS_CALENDAR ||--o{ HOLIDAY : "excludes"
-    ORGANIZATION |o--o{ USER : "has clients"
+    ORGANIZATION |o--o{ APP_USER : "has clients"
     ORGANIZATION |o--o{ SLA_POLICY : "overrides"
     ORGANIZATION ||--o{ TICKET : "owns"
     CATEGORY ||--o{ TICKET : "classifies"
     SLA_POLICY ||--o{ TICKET : "applies to"
-    USER ||--o{ TICKET : "requests"
-    USER |o--o{ TICKET : "is assigned"
+    APP_USER ||--o{ TICKET : "requests"
+    APP_USER |o--o{ TICKET : "is assigned"
     TICKET ||--o{ TICKET_COMMENT : "has"
-    USER ||--o{ TICKET_COMMENT : "writes"
+    APP_USER ||--o{ TICKET_COMMENT : "writes"
     TICKET ||--|{ TICKET_EVENT : "history"
-    USER |o--o{ TICKET_EVENT : "acts"
+    APP_USER |o--o{ TICKET_EVENT : "acts"
     TICKET ||--o{ SLA_ALERT : "raises"
 
     ORGANIZATION {
@@ -32,7 +32,7 @@ erDiagram
         boolean is_active
         timestamptz created_at
     }
-    USER {
+    APP_USER {
         bigint id PK
         varchar email UK
         varchar full_name
@@ -130,7 +130,7 @@ erDiagram
 | Entity | Purpose | Design notes |
 |---|---|---|
 | `organization` | A client company. | Linked to the business calendar it contracted. `next_ticket_number` provides per-client ticket numbers (e.g. `ACME-42`). |
-| `user` | Anyone using the system. | Custom user model from the first migration. Clients belong to an organization; agents and admins belong to the support provider and have no organization. |
+| `app_user` | Anyone using the system. | Custom user model from the first migration. Named `app_user` because `user` is a reserved word in PostgreSQL. Clients belong to an organization; agents and admins belong to the support provider and have no organization. |
 | `category` | Ticket classification. | Global catalog managed by admins. |
 | `business_calendar` | Contracted support hours. | Holds the time zone used to evaluate business hours. |
 | `business_hours` | Working time slots per weekday. | Several rows per day allow split shifts. |
@@ -145,7 +145,7 @@ erDiagram
 
 | Table | Constraint | Guarantees |
 |---|---|---|
-| `user` | `CHECK ((role = 'client') = (organization_id IS NOT NULL))` | Role and organization are consistent. |
+| `app_user` | `CHECK ((role = 'client') = (organization_id IS NOT NULL))` | Role and organization are consistent. |
 | `ticket` | `CHECK` on `priority` and `status` values | Valid values even when writing outside Django. |
 | `ticket` | `CHECK (status <> 'closed' OR closed_at IS NOT NULL)`, same idea for `resolved_at` | Timestamps match the status. |
 | `ticket` | `CHECK ((first_response_at IS NULL) = (first_response_business_minutes IS NULL))`, same idea for `resolved_at` and `resolution_business_minutes` | A business duration exists only when its timestamp does. |
@@ -191,7 +191,7 @@ the system fails closed.
 | `ticket_comment` | Same as `ticket`, and clients never see rows with `is_internal = true`. |
 | `ticket_event` | Same as `ticket`. `UPDATE` and `DELETE` are revoked from the application role. |
 | `organization` | Clients see only their own organization. |
-| `user` | Clients see users of their organization plus staff (to display the assignee). |
+| `app_user` | Clients see users of their organization plus staff (to display the assignee). |
 | `sla_alert` | Staff only. |
 | Catalogs | `category`, calendars and `sla_policy` have no RLS; the application role has read-only access. |
 
