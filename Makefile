@@ -4,7 +4,7 @@
 # PowerShell, cmd and sh, so this file works on Windows, macOS, Linux and in CI.
 # Keep shell logic (conditionals, loops, rm...) out of the recipes.
 
-.PHONY: up down ps logs psql run migrate makemigrations test
+.PHONY: up down ps logs psql run migrate makemigrations test lint format
 
 # Start the services in the background and wait until their healthchecks pass.
 up:
@@ -38,3 +38,13 @@ makemigrations:
 # and drops a separate test_<name> database.
 test:
 	uv run pytest
+
+# Check only, never modify files: this is what CI runs.
+lint:
+	uv run ruff check .
+	uv run ruff format --check .
+
+# Apply safe autofixes (import order, modern syntax...) and format the code.
+format:
+	uv run ruff check --fix .
+	uv run ruff format .
