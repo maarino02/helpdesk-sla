@@ -5,7 +5,7 @@
 Multi-tenant helpdesk with SLA tracking in business hours, built with Django,
 PostgreSQL Row-Level Security and Celery.
 
-> **Status:** in development. Currently in phase 1 (project skeleton). See the [roadmap](#roadmap).
+> **Status:** in development. Phase 1 (project skeleton) is complete; phase 2 (data model) is next. See the [roadmap](#roadmap).
 
 ## Overview
 
@@ -45,7 +45,7 @@ A background process watches those deadlines and raises alerts before they are b
 ## Roadmap
 
 - [x] **Phase 0 - Design:** data model, state machine and architecture decisions
-- [ ] **Phase 1 - Skeleton:** Django project, Docker Compose, tests and CI
+- [x] **Phase 1 - Skeleton:** Django project, Docker Compose, tests and CI
 - [ ] **Phase 2 - Data model:** models, constraints, indexes and migrations
 - [ ] **Phase 3 - Auth & isolation:** JWT, roles and Row-Level Security policies
 - [ ] **Phase 4 - Tickets API:** CRUD, state transitions, comments and event history
