@@ -4,7 +4,7 @@
 # PowerShell, cmd and sh, so this file works on Windows, macOS, Linux and in CI.
 # Keep shell logic (conditionals, loops, rm...) out of the recipes.
 
-.PHONY: up up-app down ps logs psql run migrate makemigrations test lint format worker beat
+.PHONY: up up-app down ps logs psql run migrate makemigrations migrations-check test lint format worker beat
 
 # Start the services in the background and wait until their healthchecks pass.
 up:
@@ -39,6 +39,10 @@ migrate:
 
 makemigrations:
 	uv run backend/manage.py makemigrations
+
+# Fail if a model change has no migration yet. Writes nothing; CI runs it too.
+migrations-check:
+	uv run backend/manage.py makemigrations --check --dry-run
 
 # Test suite. Needs the db container running (make up); pytest-django creates
 # and drops a separate test_<name> database.
