@@ -150,3 +150,68 @@ class Holiday(models.Model):
 
     def __str__(self) -> str:
         return f"{self.date:%Y-%m-%d} {self.name}"
+
+
+class Priority(models.TextChoices):
+    # Stored as varchar + CHECK, not a native ENUM: adding or reordering a value is
+    # an ordinary migration instead of ALTER TYPE. Ticket.priority reuses this class.
+    LOW = "low", "Baja"
+    MEDIUM = "medium", "Media"
+    HIGH = "high", "Alta"
+    CRITICAL = "critical", "Crítica"
+
+
+class SlaPolicy(models.Model):
+    """Response and resolution targets, in business minutes, for one priority.
+
+    organization = NULL is the default policy; a row with an organization is a
+    client-specific agreement that overrides the default for that priority.
+    """
+
+    organization = models.ForeignKey(
+        # String reference: organizations already depends on sla (business calendar),
+        # so importing the model here would be a circular import. The migrations stay
+        # acyclic: sla 0001-0002 -> organizations 0001 -> sla 0003.
+        "organizations.Organization",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="sla_policies",
+        # The unique (organization_id, priority) index starts with organization_id
+        # and already serves lookups by organization.
+        db_index=False,
+    )
+    priority = models.CharField(max_length=10, choices=Priority)
+    first_response_minutes = models.IntegerField()
+    resolution_minutes = models.IntegerField()
+
+    class Meta:
+        db_table = "sla_policy"
+        verbose_name = "política de SLA"
+        verbose_name_plural = "políticas de SLA"
+        ordering = ["organization", "priority"]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(priority__in=Priority.values),
+                name="sla_policy_priority_valid",
+            ),
+            # A plain UNIQUE treats NULLs as distinct, so it would allow several
+            # default policies (organization NULL) for the same priority.
+            # NULLS NOT DISTINCT (PostgreSQL 15+) compares NULL as equal to NULL.
+            models.UniqueConstraint(
+                fields=["organization", "priority"],
+                nulls_distinct=False,
+                name="sla_policy_unique_organization_priority",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    first_response_minutes__gt=0,
+                    resolution_minutes__gte=F("first_response_minutes"),
+                ),
+                name="sla_policy_minutes_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        scope = self.organization or "Por defecto"
+        return f"{scope} · {self.get_priority_display()}"

@@ -3,12 +3,15 @@ import datetime
 import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.db.models import ProtectedError
 
-from apps.sla.models import BusinessHours, Holiday, Weekday
+from apps.organizations.tests.factories import OrganizationFactory
+from apps.sla.models import BusinessHours, Holiday, Priority, Weekday
 from apps.sla.tests.factories import (
     BusinessCalendarFactory,
     BusinessHoursFactory,
     HolidayFactory,
+    SlaPolicyFactory,
 )
 
 pytestmark = pytest.mark.django_db
@@ -149,3 +152,68 @@ class TestHoliday:
 
         assert not BusinessHours.objects.exists()
         assert not Holiday.objects.exists()
+
+
+class TestSlaPolicy:
+    def test_only_one_default_policy_per_priority(self):
+        # The key case: both rows have organization NULL. A plain UNIQUE would let
+        # this through, because NULL is never equal to NULL.
+        SlaPolicyFactory(priority=Priority.HIGH)
+
+        assert_violates(
+            "sla_policy_unique_organization_priority",
+            SlaPolicyFactory,
+            priority=Priority.HIGH,
+        )
+
+    def test_only_one_policy_per_organization_and_priority(self):
+        policy = SlaPolicyFactory(organization=OrganizationFactory(), priority=Priority.HIGH)
+
+        assert_violates(
+            "sla_policy_unique_organization_priority",
+            SlaPolicyFactory,
+            organization=policy.organization,
+            priority=Priority.HIGH,
+        )
+
+    def test_client_policy_can_override_the_default(self):
+        organization = OrganizationFactory()
+        SlaPolicyFactory(priority=Priority.HIGH)
+
+        SlaPolicyFactory(organization=organization, priority=Priority.HIGH)
+        SlaPolicyFactory(organization=OrganizationFactory(), priority=Priority.HIGH)
+
+    def test_full_clean_reports_duplicate_default_policy(self):
+        SlaPolicyFactory(priority=Priority.LOW)
+        duplicate = SlaPolicyFactory.build(priority=Priority.LOW)
+
+        with pytest.raises(ValidationError):
+            duplicate.full_clean()
+
+    def test_unknown_priority_is_rejected(self):
+        assert_violates("sla_policy_priority_valid", SlaPolicyFactory, priority="urgent")
+
+    @pytest.mark.parametrize(
+        ("first_response", "resolution"),
+        [
+            (0, 60),  # no time to respond
+            (-30, 60),
+            (120, 60),  # resolution before first response
+        ],
+    )
+    def test_invalid_minutes_are_rejected(self, first_response, resolution):
+        assert_violates(
+            "sla_policy_minutes_valid",
+            SlaPolicyFactory,
+            first_response_minutes=first_response,
+            resolution_minutes=resolution,
+        )
+
+    def test_resolution_may_equal_first_response(self):
+        SlaPolicyFactory(first_response_minutes=60, resolution_minutes=60)
+
+    def test_organization_with_policies_cannot_be_deleted(self):
+        policy = SlaPolicyFactory(organization=OrganizationFactory())
+
+        with pytest.raises(ProtectedError):
+            policy.organization.delete()

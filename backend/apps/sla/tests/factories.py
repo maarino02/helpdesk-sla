@@ -2,7 +2,14 @@ import datetime
 
 import factory
 
-from apps.sla.models import BusinessCalendar, BusinessHours, Holiday, Weekday
+from apps.sla.models import (
+    BusinessCalendar,
+    BusinessHours,
+    Holiday,
+    Priority,
+    SlaPolicy,
+    Weekday,
+)
 
 
 class BusinessCalendarFactory(factory.django.DjangoModelFactory):
@@ -30,3 +37,15 @@ class HolidayFactory(factory.django.DjangoModelFactory):
     calendar = factory.SubFactory(BusinessCalendarFactory)
     date = factory.Sequence(lambda n: datetime.date(2026, 1, 1) + datetime.timedelta(days=n))
     name = factory.Sequence(lambda n: f"Holiday {n}")
+
+
+class SlaPolicyFactory(factory.django.DjangoModelFactory):
+    """Default policy (no organization) unless one is passed."""
+
+    class Meta:
+        model = SlaPolicy
+
+    organization = None
+    priority = Priority.MEDIUM
+    first_response_minutes = 240
+    resolution_minutes = 1440
