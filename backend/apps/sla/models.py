@@ -1,8 +1,10 @@
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from django.contrib.postgres.constraints import ExclusionConstraint
+from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models import F, Q
+from django.db.models import F, Func, Q
 
 
 def validate_timezone(value: str) -> None:
@@ -31,6 +33,25 @@ class BusinessCalendar(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} ({self.timezone})"
+
+
+class OnFixedDate(Func):
+    """Turn a time into a timestamp on an arbitrary fixed date (2000-01-01).
+
+    PostgreSQL has range types for numbers, dates and timestamps but not for times.
+    Placing every time on the same date makes tsrange() usable for time slots; the
+    date itself is meaningless and never stored.
+    """
+
+    template = "(DATE '2000-01-01' + %(expressions)s)"
+    output_field = models.DateTimeField()
+
+
+class TsRange(Func):
+    """PostgreSQL tsrange(start, end): half-open [start, end) by default."""
+
+    function = "tsrange"
+    output_field = DateTimeRangeField()
 
 
 class Weekday(models.IntegerChoices):
@@ -72,6 +93,26 @@ class BusinessHours(models.Model):
             models.CheckConstraint(
                 condition=Q(start_time__lt=F("end_time")),
                 name="business_hours_start_before_end",
+            ),
+            # Two slots of the same calendar and weekday cannot overlap, or business
+            # minutes would be counted twice. A CHECK only sees one row; an exclusion
+            # constraint compares each new row with the existing ones through a GiST
+            # index, like a UNIQUE where "conflict" means overlap (&&) instead of
+            # equality. Ranges are [start, end), so 09-14 and 14-18 do not overlap.
+            # btree_gist lets the GiST index compare plain bigint/smallint with =.
+            ExclusionConstraint(
+                name="business_hours_no_overlap",
+                expressions=[
+                    ("calendar", RangeOperators.EQUAL),
+                    ("weekday", RangeOperators.EQUAL),
+                    (
+                        TsRange(OnFixedDate("start_time"), OnFixedDate("end_time")),
+                        RangeOperators.OVERLAPS,
+                    ),
+                ],
+                violation_error_message=(
+                    "La franja se solapa con otra del mismo calendario y día."
+                ),
             ),
         ]
 

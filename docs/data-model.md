@@ -155,6 +155,7 @@ erDiagram
 | `sla_policy` | `UNIQUE NULLS NOT DISTINCT (organization_id, priority)` | Only one default policy per priority (PostgreSQL 15+). |
 | `sla_policy` | `CHECK (resolution_minutes >= first_response_minutes AND first_response_minutes > 0)` | Sensible deadlines. |
 | `business_hours` | `CHECK (start_time < end_time)`, `CHECK (weekday BETWEEN 0 AND 6)` | Valid time slots. |
+| `business_hours` | `EXCLUDE USING gist (calendar_id WITH =, weekday WITH =, tsrange(...) WITH &&)` | Slots of the same calendar and weekday never overlap, so business minutes are not counted twice. Adjacent slots (09-14, 14-18) are allowed. Needs the `btree_gist` extension; times are placed on a fixed date because PostgreSQL has no time range type. |
 | `holiday` | `UNIQUE (calendar_id, date)` | No duplicated holidays. |
 | `sla_alert` | `UNIQUE (ticket_id, kind, level)` | Idempotent alerts with `INSERT ... ON CONFLICT DO NOTHING`. |
 
