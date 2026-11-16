@@ -30,9 +30,13 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # PostgreSQL-specific features: exclusion constraints, range fields, extensions.
+    "django.contrib.postgres",
     # Local apps
     "apps.accounts",
     "apps.core",
+    "apps.sla",
+    "apps.organizations",
 ]
 
 MIDDLEWARE = [
