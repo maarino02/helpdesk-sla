@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+  # Pull requests test the branch merged into main; after the merge, check main
+  # itself is still green.
+  push:
+    branches: [main]
+
+# A new push to the same branch cancels the run that is now outdated.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# The token only needs to read the code. Jobs cannot push, comment or tag.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Actions pinned by commit SHA: a tag can be moved to other code, a SHA cannot.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          # Same uv as local development and the Dockerfile.
+          version: "0.13.8"
+          enable-cache: true
+
+      # --locked fails if uv.lock is out of date with pyproject.toml, instead of
+      # silently updating it and testing something different from the repository.
+      # Python comes from .python-version.
+      - run: uv sync --locked
+
+      - run: make lint
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Same images as docker-compose.yml. Steps start only once both healthchecks
+    # pass, so the first query does not race the database startup.
+    services:
+      db:
+        image: postgres:17
+        env:
+          POSTGRES_USER: helpdesk
+          POSTGRES_PASSWORD: helpdesk
+          POSTGRES_DB: helpdesk
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U helpdesk"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    # The job runs on the runner, not in a container, so services are reached
+    # through their published ports on 127.0.0.1.
+    env:
+      DATABASE_URL: postgres://helpdesk:helpdesk@127.0.0.1:5432/helpdesk?connect_timeout=5
+      REDIS_URL: redis://127.0.0.1:6379/0
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.8"
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      - run: make migrations-check
+
+      - run: make test
