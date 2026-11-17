@@ -44,7 +44,7 @@ erDiagram
     }
     CATEGORY {
         bigint id PK
-        varchar name UK
+        varchar name UK "case-insensitive"
         boolean is_active
     }
     BUSINESS_CALENDAR {
@@ -121,6 +121,7 @@ erDiagram
         bigint organization_id FK
         varchar kind "first_response | resolution"
         varchar level "warning | breached"
+        timestamptz due_at "deadline when raised"
         timestamptz created_at
     }
 ```
@@ -139,32 +140,56 @@ erDiagram
 | `ticket` | The incident. | Stores the computed SLA deadlines (`*_due_at`), the start of the current pause, the key timestamps and the business minutes consumed until the first response and the resolution (see ADR-0002). |
 | `ticket_comment` | Ticket conversation. | `is_internal` marks agent-only notes. |
 | `ticket_event` | Change history. | Append-only. `actor_id = NULL` means a system action, such as an `sla_recalculated` event after a calendar change. |
-| `sla_alert` | Alerts already raised. | Its unique key guarantees each alert is raised only once. |
+| `sla_alert` | Alerts already raised. | Its unique key guarantees each alert is raised only once, so there is at most one warning per ticket and kind even if the deadline is later extended. `due_at` keeps the deadline that triggered the alert, since the ticket's deadline may move afterwards. |
 
 ## Integrity constraints
 
+Every enumerated column (`role`, `priority`, `status`, `event_type`, `kind`, `level`)
+is a `varchar` with a `CHECK` on its allowed values, so values stay valid even when
+writing outside Django. They are not repeated in the table below.
+
 | Table | Constraint | Guarantees |
 |---|---|---|
-| `app_user` | `CHECK ((role = 'client') = (organization_id IS NOT NULL))` | Role and organization are consistent. |
-| `ticket` | `CHECK` on `priority` and `status` values | Valid values even when writing outside Django. |
-| `ticket` | `CHECK (status <> 'closed' OR closed_at IS NOT NULL)`, same idea for `resolved_at` | Timestamps match the status. |
-| `ticket` | `CHECK ((first_response_at IS NULL) = (first_response_business_minutes IS NULL))`, same idea for `resolved_at` and `resolution_business_minutes` | A business duration exists only when its timestamp does. |
-| `ticket` | `UNIQUE (organization_id, number)` | Unique ticket numbers per client. |
-| `ticket` | `UNIQUE (id, organization_id)` | Target for the composite foreign keys below. |
-| `ticket_comment`, `ticket_event`, `sla_alert` | `FOREIGN KEY (ticket_id, organization_id) REFERENCES ticket (id, organization_id)` | The denormalized `organization_id` can never contradict the ticket's. Created with `RunSQL`, since Django does not support composite foreign keys. |
-| `sla_policy` | `CHECK` on `priority` values | Same values as `ticket.priority`. |
-| `sla_policy` | `UNIQUE NULLS NOT DISTINCT (organization_id, priority)` | Only one default policy per priority (PostgreSQL 15+). |
-| `sla_policy` | `CHECK (resolution_minutes >= first_response_minutes AND first_response_minutes > 0)` | Sensible deadlines. |
 | `organization` | `UNIQUE (slug)`, `CHECK (slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$')`, `CHECK (next_ticket_number >= 1)` | Unique, URL-safe client codes for ticket references; ticket numbers start at 1. |
+| `app_user` | `CHECK ((role = 'client') = (organization_id IS NOT NULL))` | Role and organization are consistent. |
+| `app_user` | `UNIQUE (email)`, `CHECK (email = lower(email))`, `CHECK (email <> '')` | Case-insensitive unique emails: they are stored lowercase, so a plain unique index is enough. |
+| `app_user` | `CHECK (NOT is_staff OR role <> 'client')` | Clients never access the Django admin. |
+| `app_user` | `UNIQUE (id, organization_id)` | Target for the requester composite foreign key. |
+| `category` | `UNIQUE (lower(name))` | No duplicated categories differing only in case; the name keeps the case it was typed with. |
 | `business_hours` | `CHECK (start_time < end_time)`, `CHECK (weekday BETWEEN 0 AND 6)` | Valid time slots. |
 | `business_hours` | `EXCLUDE USING gist (calendar_id WITH =, weekday WITH =, tsrange(...) WITH &&)` | Slots of the same calendar and weekday never overlap, so business minutes are not counted twice. Adjacent slots (09-14, 14-18) are allowed. Needs the `btree_gist` extension; times are placed on a fixed date because PostgreSQL has no time range type. |
 | `holiday` | `UNIQUE (calendar_id, date)` | No duplicated holidays. |
-| `sla_alert` | `UNIQUE (ticket_id, kind, level)` | Idempotent alerts with `INSERT ... ON CONFLICT DO NOTHING`. |
+| `sla_policy` | `UNIQUE NULLS NOT DISTINCT (organization_id, priority)` | Only one default policy per priority (PostgreSQL 15+). |
+| `sla_policy` | `CHECK (resolution_minutes >= first_response_minutes AND first_response_minutes > 0)` | Sensible deadlines. |
+| `ticket` | `UNIQUE (organization_id, number)`, `CHECK (number >= 1)` | Unique ticket numbers per client. |
+| `ticket` | `UNIQUE (id, organization_id)` | Target for the composite foreign keys of comments, events and alerts. |
+| `ticket` | `FOREIGN KEY (requester_id, organization_id) REFERENCES app_user (id, organization_id)` | The requester is a client of the ticket's organization (staff have no organization, so they never match). Created with `RunSQL`. |
+| `ticket` | `CHECK ((status = 'closed') = (closed_at IS NOT NULL))`, `CHECK ((status IN ('resolved', 'closed')) = (resolved_at IS NOT NULL))` | Timestamps match the status in both directions: no missing timestamps and no leftover ones (reopening clears `resolved_at`). |
+| `ticket` | `CHECK ((first_response_at IS NULL) = (first_response_business_minutes IS NULL))`, same idea for `resolved_at` and `resolution_business_minutes` | A business duration exists only when its timestamp does. |
+| `ticket` | `CHECK (first_response_business_minutes >= 0 AND resolution_business_minutes >= 0)` | No negative durations. `NULL` passes: a `CHECK` only rejects a condition that is false, not unknown. |
+| `ticket_comment`, `ticket_event`, `sla_alert` | `FOREIGN KEY (ticket_id, organization_id) REFERENCES ticket (id, organization_id)` | The denormalized `organization_id` can never contradict the ticket's. Created with `RunSQL`, since Django does not support composite foreign keys. They replace the simple foreign keys to `ticket` and `organization` (`db_constraint=False` in Django). Not deferrable, so the offending `INSERT` fails at once; `ON UPDATE` / `ON DELETE NO ACTION`, so a ticket can be neither moved to another organization nor deleted. |
+| `ticket_comment` | `CHECK (body ~ '\S')` | No empty or whitespace-only comments. |
+| `ticket_event` | `CHECK (jsonb_typeof(metadata) = 'object')` | `metadata` is always a JSON object. |
+| `ticket_event` | `CHECK (from_value <> '' AND to_value <> '')` | `NULL` is the only way to say "no value". |
+| `sla_alert` | `UNIQUE (ticket_id, kind, level)` | Idempotent alerts with `INSERT ... ON CONFLICT DO NOTHING`; `RETURNING id` yields a row only for a new alert, which is the only case that sends a notification. |
+
+`backend/tests/test_schema.py` compares this catalog with the models: every constraint
+in the database must be declared in a model or be one of the four composite foreign
+keys listed in the test, and the other way round.
 
 ## Initial indexes
 
 These are a first proposal. They will be validated with `EXPLAIN ANALYZE` against
 realistic seed data in phase 8.
+
+Django indexes every foreign key by default. `ticket.organization_id` and
+`ticket.assignee_id` have no index of their own: `UNIQUE (organization_id, number)` and
+`(assignee_id, status)` start with those columns and serve the same lookups. The same
+applies to `ticket_id` in `ticket_comment` and `ticket_event`, covered by their
+`(ticket_id, created_at)` indexes, and in `sla_alert`, covered by its unique
+`(ticket_id, kind, level)` index. To review in phase 8: `business_hours` has both the
+automatic B-tree index on `calendar_id` and the GiST index of its exclusion constraint,
+which also starts with `calendar_id`.
 
 | Index | Supports |
 |---|---|

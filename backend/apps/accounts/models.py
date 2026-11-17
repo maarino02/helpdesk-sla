@@ -120,6 +120,13 @@ class User(AbstractBaseUser, PermissionsMixin):
                 name="app_user_client_not_staff",
                 violation_error_message="Un cliente no puede acceder al admin.",
             ),
+            # Redundant as a uniqueness rule (id is already unique), but a foreign key
+            # can only reference columns with a unique constraint. Target of
+            # ticket (requester_id, organization_id); see tickets 0004.
+            models.UniqueConstraint(
+                fields=["id", "organization"],
+                name="app_user_unique_id_organization",
+            ),
         ]
 
     def clean(self):
