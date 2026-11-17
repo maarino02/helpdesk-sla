@@ -171,6 +171,10 @@ erDiagram
 These are a first proposal. They will be validated with `EXPLAIN ANALYZE` against
 realistic seed data in phase 8.
 
+Django indexes every foreign key by default. `ticket.organization_id` and
+`ticket.assignee_id` have no index of their own: `UNIQUE (organization_id, number)` and
+`(assignee_id, status)` start with those columns and serve the same lookups.
+
 | Index | Supports |
 |---|---|
 | `ticket (organization_id, status)` | Client ticket list filtered by status. |
