@@ -121,6 +121,7 @@ erDiagram
         bigint organization_id FK
         varchar kind "first_response | resolution"
         varchar level "warning | breached"
+        timestamptz due_at "deadline when raised"
         timestamptz created_at
     }
 ```
@@ -139,7 +140,7 @@ erDiagram
 | `ticket` | The incident. | Stores the computed SLA deadlines (`*_due_at`), the start of the current pause, the key timestamps and the business minutes consumed until the first response and the resolution (see ADR-0002). |
 | `ticket_comment` | Ticket conversation. | `is_internal` marks agent-only notes. |
 | `ticket_event` | Change history. | Append-only. `actor_id = NULL` means a system action, such as an `sla_recalculated` event after a calendar change. |
-| `sla_alert` | Alerts already raised. | Its unique key guarantees each alert is raised only once. |
+| `sla_alert` | Alerts already raised. | Its unique key guarantees each alert is raised only once, so there is at most one warning per ticket and kind even if the deadline is later extended. `due_at` keeps the deadline that triggered the alert, since the ticket's deadline may move afterwards. |
 
 ## Integrity constraints
 
@@ -167,7 +168,8 @@ erDiagram
 | `business_hours` | `CHECK (start_time < end_time)`, `CHECK (weekday BETWEEN 0 AND 6)` | Valid time slots. |
 | `business_hours` | `EXCLUDE USING gist (calendar_id WITH =, weekday WITH =, tsrange(...) WITH &&)` | Slots of the same calendar and weekday never overlap, so business minutes are not counted twice. Adjacent slots (09-14, 14-18) are allowed. Needs the `btree_gist` extension; times are placed on a fixed date because PostgreSQL has no time range type. |
 | `holiday` | `UNIQUE (calendar_id, date)` | No duplicated holidays. |
-| `sla_alert` | `UNIQUE (ticket_id, kind, level)` | Idempotent alerts with `INSERT ... ON CONFLICT DO NOTHING`. |
+| `sla_alert` | `UNIQUE (ticket_id, kind, level)` | Idempotent alerts with `INSERT ... ON CONFLICT DO NOTHING`; `RETURNING id` yields a row only for a new alert, which is the only case that sends a notification. |
+| `sla_alert` | `CHECK` on `kind` and `level` values | Known alert types. |
 
 ## Initial indexes
 
@@ -178,7 +180,8 @@ Django indexes every foreign key by default. `ticket.organization_id` and
 `ticket.assignee_id` have no index of their own: `UNIQUE (organization_id, number)` and
 `(assignee_id, status)` start with those columns and serve the same lookups. The same
 applies to `ticket_id` in `ticket_comment` and `ticket_event`, covered by their
-`(ticket_id, created_at)` indexes.
+`(ticket_id, created_at)` indexes, and in `sla_alert`, covered by its unique
+`(ticket_id, kind, level)` index.
 
 | Index | Supports |
 |---|---|
