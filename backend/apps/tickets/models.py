@@ -84,6 +84,8 @@ class Ticket(models.Model):
         null=True,
         blank=True,
         related_name="assigned_tickets",
+        # Covered by the (assignee_id, status) index, which starts with this column.
+        db_index=False,
     )
     sla_policy = models.ForeignKey(
         "sla.SlaPolicy",
@@ -114,6 +116,30 @@ class Ticket(models.Model):
         verbose_name = "incidencia"
         verbose_name_plural = "incidencias"
         ordering = ["-created_at"]
+        # First proposal, to be validated with EXPLAIN ANALYZE on seed data (phase 8).
+        # Django limits index names to 30 characters.
+        indexes = [
+            # Client ticket list filtered by status.
+            models.Index(fields=["organization", "status"], name="ticket_org_status_idx"),
+            # Agent work queue and workload per agent.
+            models.Index(fields=["assignee", "status"], name="ticket_assignee_status_idx"),
+            # Partial indexes for the SLA alert job (phase 6). The planner only uses a
+            # partial index when the query's WHERE implies the index predicate, so that
+            # query must repeat these exact conditions.
+            models.Index(
+                fields=["resolution_due_at"],
+                condition=Q(status__in=[Status.NEW, Status.OPEN]),  # clock running
+                name="ticket_resolution_due_idx",
+            ),
+            models.Index(
+                fields=["first_response_due_at"],
+                condition=Q(first_response_at__isnull=True),
+                name="ticket_first_resp_due_idx",
+            ),
+            # Monthly dashboard aggregations and the default -created_at ordering:
+            # a B-tree returns rows already sorted, so ORDER BY ... LIMIT needs no sort.
+            models.Index(fields=["created_at"], name="ticket_created_at_idx"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["organization", "number"],
