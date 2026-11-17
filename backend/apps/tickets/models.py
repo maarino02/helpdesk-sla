@@ -70,12 +70,16 @@ class Ticket(models.Model):
     priority = models.CharField(max_length=10, choices=Priority)
     status = models.CharField(max_length=20, choices=Status, db_default=Status.NEW)
     # Users are deactivated, never deleted: tickets and history keep pointing to them.
-    # That the requester is a client of this organization is enforced in step 7 with a
-    # composite FK (requester_id, organization_id) -> app_user (id, organization_id).
+    # In the database, the simple FK is replaced by the composite FK
+    # (requester_id, organization_id) -> app_user (id, organization_id) created in
+    # tickets 0004: the requester must be a client of this ticket's organization.
+    # db_constraint=False keeps the ORM relation and the PROTECT check (done by Django
+    # in Python) without a second, redundant constraint.
     requester = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="requested_tickets",
+        db_constraint=False,
     )
     # That the assignee is an agent or admin is checked in the service layer.
     assignee = models.ForeignKey(
@@ -144,6 +148,13 @@ class Ticket(models.Model):
             models.UniqueConstraint(
                 fields=["organization", "number"],
                 name="ticket_unique_organization_number",
+            ),
+            # Target of the composite FKs (ticket_id, organization_id) of comments,
+            # events and alerts, which keep their denormalized organization_id in
+            # sync with the ticket's.
+            models.UniqueConstraint(
+                fields=["id", "organization"],
+                name="ticket_unique_id_organization",
             ),
             models.CheckConstraint(
                 condition=Q(number__gte=1),

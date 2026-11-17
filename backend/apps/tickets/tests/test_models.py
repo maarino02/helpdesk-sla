@@ -4,9 +4,10 @@ from django.db import IntegrityError, connection, transaction
 from django.db.models import ProtectedError
 from django.utils import timezone
 
-from apps.accounts.tests.factories import AgentUserFactory
+from apps.accounts.models import User
+from apps.accounts.tests.factories import AdminUserFactory, AgentUserFactory, ClientUserFactory
 from apps.organizations.tests.factories import OrganizationFactory
-from apps.tickets.models import Category, Status
+from apps.tickets.models import Category, Status, Ticket
 from apps.tickets.tests.factories import CategoryFactory, TicketFactory
 
 pytestmark = pytest.mark.django_db
@@ -198,6 +199,45 @@ def test_assignee_cannot_be_deleted():
 
     with pytest.raises(ProtectedError):
         ticket.assignee.delete()
+
+
+# Requester (composite FK, tickets 0004)
+
+
+def test_requester_from_another_organization_is_rejected():
+    assert_violates(
+        "ticket_requester_same_organization_fk",
+        TicketFactory,
+        requester=ClientUserFactory(),  # a client of a different organization
+    )
+
+
+@pytest.mark.parametrize("factory", [AgentUserFactory, AdminUserFactory])
+def test_staff_cannot_be_the_requester(factory):
+    # Staff have organization_id NULL, so (id, ticket organization) never matches.
+    assert_violates("ticket_requester_same_organization_fk", TicketFactory, requester=factory())
+
+
+def test_ticket_cannot_move_to_another_organization():
+    ticket = TicketFactory()
+
+    with (
+        pytest.raises(IntegrityError, match="ticket_requester_same_organization_fk"),
+        transaction.atomic(),
+    ):
+        Ticket.objects.filter(pk=ticket.pk).update(organization=OrganizationFactory())
+
+
+def test_requester_cannot_move_to_another_organization():
+    # ON UPDATE NO ACTION: the referenced (id, organization_id) pair cannot change
+    # while tickets point to it.
+    ticket = TicketFactory()
+
+    with (
+        pytest.raises(IntegrityError, match="ticket_requester_same_organization_fk"),
+        transaction.atomic(),
+    ):
+        User.objects.filter(pk=ticket.requester_id).update(organization=OrganizationFactory())
 
 
 # Category
