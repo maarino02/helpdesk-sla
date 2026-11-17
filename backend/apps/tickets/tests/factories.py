@@ -7,8 +7,11 @@ from apps.accounts.tests.factories import ClientUserFactory
 from apps.organizations.tests.factories import OrganizationFactory
 from apps.sla.models import Priority, SlaPolicy
 from apps.tickets.models import (
+    AlertKind,
+    AlertLevel,
     Category,
     EventType,
+    SlaAlert,
     Status,
     Ticket,
     TicketComment,
@@ -101,3 +104,16 @@ class TicketEventFactory(factory.django.DjangoModelFactory):
     organization = factory.SelfAttribute("ticket.organization")
     actor = None
     event_type = EventType.CREATED
+
+
+class SlaAlertFactory(factory.django.DjangoModelFactory):
+    """A resolution warning, with the ticket's current deadline."""
+
+    class Meta:
+        model = SlaAlert
+
+    ticket = factory.SubFactory(TicketFactory)
+    organization = factory.SelfAttribute("ticket.organization")
+    kind = AlertKind.RESOLUTION
+    level = AlertLevel.WARNING
+    due_at = factory.SelfAttribute("ticket.resolution_due_at")

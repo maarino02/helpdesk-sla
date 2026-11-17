@@ -3,7 +3,7 @@ from django.urls import reverse
 
 from apps.accounts.tests.factories import AdminUserFactory
 from apps.tickets.models import Category
-from apps.tickets.tests.factories import CategoryFactory, TicketFactory
+from apps.tickets.tests.factories import CategoryFactory, SlaAlertFactory, TicketFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -14,9 +14,9 @@ def admin_client(client):
     return client
 
 
-@pytest.mark.parametrize("model", ["category", "ticket"])
+@pytest.mark.parametrize("model", ["category", "ticket", "slaalert"])
 def test_changelist_renders(admin_client, model):
-    TicketFactory()
+    SlaAlertFactory()
 
     response = admin_client.get(reverse(f"admin:tickets_{model}_changelist"))
 
@@ -53,7 +53,8 @@ def test_ticket_detail_is_read_only(admin_client):
     assert 'name="_save"' not in response.content.decode()
 
 
-def test_tickets_cannot_be_added_from_the_admin(admin_client):
-    response = admin_client.get(reverse("admin:tickets_ticket_add"))
+@pytest.mark.parametrize("model", ["ticket", "slaalert"])
+def test_rows_written_by_services_cannot_be_added_from_the_admin(admin_client, model):
+    response = admin_client.get(reverse(f"admin:tickets_{model}_add"))
 
     assert response.status_code == 403

@@ -361,3 +361,70 @@ class TicketEvent(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_event_type_display()} en {self.ticket}"
+
+
+class AlertKind(models.TextChoices):
+    FIRST_RESPONSE = "first_response", "Primera respuesta"
+    RESOLUTION = "resolution", "Resolución"
+
+
+class AlertLevel(models.TextChoices):
+    WARNING = "warning", "Aviso"  # 80% of the deadline consumed
+    BREACHED = "breached", "Incumplido"  # deadline expired
+
+
+class SlaAlert(models.Model):
+    """An SLA alert already raised for a ticket.
+
+    Created by the SLA job (phase 6) with INSERT ... ON CONFLICT DO NOTHING on the
+    unique (ticket, kind, level) key: running the job twice never duplicates an alert
+    or its notification. Consequence: at most one warning per ticket and kind, even if
+    the deadline is later extended (pause, priority or calendar change).
+    """
+
+    ticket = models.ForeignKey(
+        Ticket,
+        on_delete=models.PROTECT,
+        related_name="sla_alerts",
+        # Same pattern as comments and events: composite FK in tickets 0008.
+        db_constraint=False,
+        # Covered by the unique (ticket_id, kind, level) index.
+        db_index=False,
+    )
+    organization = models.ForeignKey(
+        "organizations.Organization",
+        on_delete=models.PROTECT,
+        related_name="+",
+        db_constraint=False,
+        db_index=False,
+    )
+    kind = models.CharField(max_length=20, choices=AlertKind)
+    level = models.CharField(max_length=10, choices=AlertLevel)
+    # Copy of the ticket deadline the alert refers to. The ticket's deadline may move
+    # afterwards (pauses, priority or calendar changes), so the alert keeps the value
+    # that triggered it.
+    due_at = models.DateTimeField()
+    created_at = models.DateTimeField(db_default=Now())
+
+    class Meta:
+        db_table = "sla_alert"
+        verbose_name = "alerta de SLA"
+        verbose_name_plural = "alertas de SLA"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["ticket", "kind", "level"],
+                name="sla_alert_unique_ticket_kind_level",
+            ),
+            models.CheckConstraint(
+                condition=Q(kind__in=AlertKind.values),
+                name="sla_alert_kind_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(level__in=AlertLevel.values),
+                name="sla_alert_level_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_level_display()} de {self.get_kind_display().lower()} en {self.ticket}"
