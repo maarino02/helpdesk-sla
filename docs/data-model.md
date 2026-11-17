@@ -44,7 +44,7 @@ erDiagram
     }
     CATEGORY {
         bigint id PK
-        varchar name UK
+        varchar name UK "case-insensitive"
         boolean is_active
     }
     BUSINESS_CALENDAR {
@@ -146,8 +146,13 @@ erDiagram
 | Table | Constraint | Guarantees |
 |---|---|---|
 | `app_user` | `CHECK ((role = 'client') = (organization_id IS NOT NULL))` | Role and organization are consistent. |
-| `ticket` | `CHECK` on `priority` and `status` values | Valid values even when writing outside Django. |
-| `ticket` | `CHECK (status <> 'closed' OR closed_at IS NOT NULL)`, same idea for `resolved_at` | Timestamps match the status. |
+| `app_user` | `UNIQUE (email)`, `CHECK (email = lower(email))` | Case-insensitive unique emails: they are stored lowercase, so a plain unique index is enough. |
+| `app_user` | `CHECK (NOT is_staff OR role <> 'client')` | Clients never access the Django admin. |
+| `app_user` | `UNIQUE (id, organization_id)` | Target for the requester composite foreign key below. |
+| `category` | `UNIQUE (lower(name))` | No duplicated categories differing only in case; the name keeps the case it was typed with. |
+| `ticket` | `CHECK` on `priority` and `status` values, `CHECK (number >= 1)` | Valid values even when writing outside Django. |
+| `ticket` | `CHECK ((status = 'closed') = (closed_at IS NOT NULL))`, `CHECK ((status IN ('resolved', 'closed')) = (resolved_at IS NOT NULL))` | Timestamps match the status in both directions: no missing timestamps and no leftover ones (reopening clears `resolved_at`). |
+| `ticket` | `FOREIGN KEY (requester_id, organization_id) REFERENCES app_user (id, organization_id)` | The requester is a client of the ticket's organization (staff have no organization, so they never match). Created with `RunSQL`. |
 | `ticket` | `CHECK ((first_response_at IS NULL) = (first_response_business_minutes IS NULL))`, same idea for `resolved_at` and `resolution_business_minutes` | A business duration exists only when its timestamp does. |
 | `ticket` | `UNIQUE (organization_id, number)` | Unique ticket numbers per client. |
 | `ticket` | `UNIQUE (id, organization_id)` | Target for the composite foreign keys below. |
