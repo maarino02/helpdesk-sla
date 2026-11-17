@@ -156,7 +156,10 @@ erDiagram
 | `ticket` | `CHECK ((first_response_at IS NULL) = (first_response_business_minutes IS NULL))`, same idea for `resolved_at` and `resolution_business_minutes` | A business duration exists only when its timestamp does. |
 | `ticket` | `UNIQUE (organization_id, number)` | Unique ticket numbers per client. |
 | `ticket` | `UNIQUE (id, organization_id)` | Target for the composite foreign keys below. |
-| `ticket_comment`, `ticket_event`, `sla_alert` | `FOREIGN KEY (ticket_id, organization_id) REFERENCES ticket (id, organization_id)` | The denormalized `organization_id` can never contradict the ticket's. Created with `RunSQL`, since Django does not support composite foreign keys. |
+| `ticket_comment`, `ticket_event`, `sla_alert` | `FOREIGN KEY (ticket_id, organization_id) REFERENCES ticket (id, organization_id)` | The denormalized `organization_id` can never contradict the ticket's. Created with `RunSQL`, since Django does not support composite foreign keys. They replace the simple foreign keys to `ticket` and `organization` (`db_constraint=False` in Django). Not deferrable, so the offending `INSERT` fails at once; `ON UPDATE` / `ON DELETE NO ACTION`, so a ticket can be neither moved to another organization nor deleted. |
+| `ticket_comment` | `CHECK (body ~ '\S')` | No empty or whitespace-only comments. |
+| `ticket_event` | `CHECK` on `event_type` values, `CHECK (jsonb_typeof(metadata) = 'object')` | Known event types; `metadata` is always a JSON object. |
+| `ticket_event` | `CHECK (from_value <> '' AND to_value <> '')` | `NULL` is the only way to say "no value". |
 | `sla_policy` | `CHECK` on `priority` values | Same values as `ticket.priority`. |
 | `sla_policy` | `UNIQUE NULLS NOT DISTINCT (organization_id, priority)` | Only one default policy per priority (PostgreSQL 15+). |
 | `sla_policy` | `CHECK (resolution_minutes >= first_response_minutes AND first_response_minutes > 0)` | Sensible deadlines. |
@@ -173,7 +176,9 @@ realistic seed data in phase 8.
 
 Django indexes every foreign key by default. `ticket.organization_id` and
 `ticket.assignee_id` have no index of their own: `UNIQUE (organization_id, number)` and
-`(assignee_id, status)` start with those columns and serve the same lookups.
+`(assignee_id, status)` start with those columns and serve the same lookups. The same
+applies to `ticket_id` in `ticket_comment` and `ticket_event`, covered by their
+`(ticket_id, created_at)` indexes.
 
 | Index | Supports |
 |---|---|
