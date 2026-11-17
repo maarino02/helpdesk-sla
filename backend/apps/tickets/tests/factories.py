@@ -6,7 +6,14 @@ from django.utils import timezone
 from apps.accounts.tests.factories import ClientUserFactory
 from apps.organizations.tests.factories import OrganizationFactory
 from apps.sla.models import Priority, SlaPolicy
-from apps.tickets.models import Category, Status, Ticket
+from apps.tickets.models import (
+    Category,
+    EventType,
+    Status,
+    Ticket,
+    TicketComment,
+    TicketEvent,
+)
 
 
 class CategoryFactory(factory.django.DjangoModelFactory):
@@ -69,3 +76,28 @@ class TicketFactory(factory.django.DjangoModelFactory):
             resolution_business_minutes=60,
             closed_at=factory.LazyFunction(timezone.now),
         )
+
+
+class TicketCommentFactory(factory.django.DjangoModelFactory):
+    """A public comment by the ticket's requester."""
+
+    class Meta:
+        model = TicketComment
+
+    ticket = factory.SubFactory(TicketFactory)
+    # Copied from the ticket, as the comment service will do.
+    organization = factory.SelfAttribute("ticket.organization")
+    author = factory.SelfAttribute("ticket.requester")
+    body = "Any news on this?"
+
+
+class TicketEventFactory(factory.django.DjangoModelFactory):
+    """A system event (no actor) unless one is passed."""
+
+    class Meta:
+        model = TicketEvent
+
+    ticket = factory.SubFactory(TicketFactory)
+    organization = factory.SelfAttribute("ticket.organization")
+    actor = None
+    event_type = EventType.CREATED

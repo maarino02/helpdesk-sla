@@ -1,7 +1,8 @@
 from django.conf import settings
 from django.db import models
-from django.db.models import Q
+from django.db.models import CharField, Func, Q
 from django.db.models.functions import Lower, Now
+from django.db.models.lookups import Exact
 
 from apps.sla.models import Priority
 
@@ -215,3 +216,148 @@ class Ticket(models.Model):
 
     def __str__(self) -> str:
         return f"{self.organization.slug.upper()}-{self.number}"
+
+
+# Comments and events copy the ticket's organization_id so that Row-Level Security
+# policies can filter them without a join (phase 3). In the database, the composite
+# FK (ticket_id, organization_id) -> ticket (id, organization_id) created in
+# tickets 0006 keeps that copy in sync and replaces the simple FKs: the Django FKs
+# below use db_constraint=False and only keep the ORM relation and the PROTECT check.
+
+
+class TicketComment(models.Model):
+    """A message in the ticket conversation. Comments are never edited."""
+
+    ticket = models.ForeignKey(
+        Ticket,
+        on_delete=models.PROTECT,
+        related_name="comments",
+        db_constraint=False,
+        # Covered by the (ticket_id, created_at) index.
+        db_index=False,
+    )
+    organization = models.ForeignKey(
+        "organizations.Organization",
+        on_delete=models.PROTECT,
+        # No reverse accessor: comments are always reached through their ticket.
+        related_name="+",
+        db_constraint=False,
+        db_index=False,
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="ticket_comments",
+    )
+    body = models.TextField()
+    # Agent-only note: hidden from clients and does not count as the first response.
+    is_internal = models.BooleanField(db_default=False)
+    created_at = models.DateTimeField(db_default=Now())
+
+    class Meta:
+        db_table = "ticket_comment"
+        verbose_name = "comentario"
+        verbose_name_plural = "comentarios"
+        # id breaks ties between comments created at the same instant.
+        ordering = ["created_at", "id"]
+        indexes = [
+            # Ordered comment thread of a ticket.
+            models.Index(fields=["ticket", "created_at"], name="ticket_comment_ticket_idx"),
+        ]
+        constraints = [
+            # At least one non-whitespace character. NOT NULL alone accepts "" and
+            # "   ", and trim() would only strip spaces, not newlines or tabs.
+            models.CheckConstraint(
+                condition=Q(body__regex=r"\S"),
+                name="ticket_comment_body_not_blank",
+                violation_error_message="El comentario no puede estar vacío.",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Comentario {self.pk} en {self.ticket}"
+
+
+class EventType(models.TextChoices):
+    CREATED = "created", "Creación"
+    STATUS_CHANGED = "status_changed", "Cambio de estado"
+    ASSIGNEE_CHANGED = "assignee_changed", "Cambio de asignación"
+    PRIORITY_CHANGED = "priority_changed", "Cambio de prioridad"
+    # System event after a calendar change (ADR-0002); actor is NULL.
+    SLA_RECALCULATED = "sla_recalculated", "Recálculo del SLA"
+
+
+class TicketEvent(models.Model):
+    """Append-only ticket history.
+
+    The application role will have UPDATE and DELETE revoked on this table (phase 3).
+    """
+
+    ticket = models.ForeignKey(
+        Ticket,
+        on_delete=models.PROTECT,
+        related_name="events",
+        db_constraint=False,
+        # Covered by the (ticket_id, created_at) index.
+        db_index=False,
+    )
+    organization = models.ForeignKey(
+        "organizations.Organization",
+        on_delete=models.PROTECT,
+        related_name="+",
+        db_constraint=False,
+        db_index=False,
+    )
+    # NULL = action performed by the system (auto-close, SLA recalculation).
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="ticket_events",
+    )
+    event_type = models.CharField(max_length=30, choices=EventType)
+    # Old and new value of the changed field (status, assignee id, priority).
+    # NULL means "no value" (e.g. from_value of a first assignment). Django's
+    # convention is '' instead of NULL for text, to avoid two empty values; here the
+    # ticket_event_values_not_empty CHECK forbids '' so NULL is the only one.
+    from_value = models.CharField(max_length=100, null=True, blank=True)  # noqa: DJ001
+    to_value = models.CharField(max_length=100, null=True, blank=True)  # noqa: DJ001
+    # Extra details, e.g. old and new deadlines in sla_recalculated.
+    metadata = models.JSONField(db_default={})
+    created_at = models.DateTimeField(db_default=Now())
+
+    class Meta:
+        db_table = "ticket_event"
+        verbose_name = "evento"
+        verbose_name_plural = "eventos"
+        ordering = ["created_at", "id"]
+        indexes = [
+            # Ticket history in order.
+            models.Index(fields=["ticket", "created_at"], name="ticket_event_ticket_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(event_type__in=EventType.values),
+                name="ticket_event_type_valid",
+            ),
+            # NULL passes (a CHECK only rejects FALSE): only '' is forbidden.
+            models.CheckConstraint(
+                condition=~Q(from_value="") & ~Q(to_value=""),
+                name="ticket_event_values_not_empty",
+            ),
+            # Always a JSON object, never a list, string or number at the top level,
+            # so readers can always do metadata->>'key'.
+            models.CheckConstraint(
+                condition=Q(
+                    Exact(
+                        Func("metadata", function="jsonb_typeof", output_field=CharField()),
+                        "object",
+                    )
+                ),
+                name="ticket_event_metadata_is_object",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_event_type_display()} en {self.ticket}"
