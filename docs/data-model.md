@@ -250,5 +250,13 @@ Requests run in one transaction each (`ATOMIC_REQUESTS`).
 | `sla_alert` | Staff only. |
 | Catalogs | `category`, calendars and `sla_policy` are shared by every organization: any role reads them, and write policies allow `INSERT`, `UPDATE` and `DELETE` only with `app.role = 'admin'`. |
 
+The context is read by `app_role()`, `app_org_id()` and `app_user_id()` (SQL, `STABLE`,
+`NULL` when missing). Client tables use one `FOR ALL` policy each, whose `USING`
+expression also acts as `WITH CHECK`; internal notes are hidden from clients by a
+separate `RESTRICTIVE` policy on `ticket_comment`. `app.role = 'system'` is set only by
+background jobs and management commands, never from a request.
+
 The application still filters by organization in its querysets. RLS is a second line
-of defense, and the explicit filter also helps the query planner.
+of defense, and the explicit filter is what lets the planner use the
+`(organization_id, ...)` indexes: the policy is an `OR` of the staff and client
+branches, so PostgreSQL applies it as a row filter, not as an index condition.
