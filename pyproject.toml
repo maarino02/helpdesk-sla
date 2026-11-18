@@ -30,6 +30,9 @@ DJANGO_SETTINGS_MODULE = "config.settings.test"
 pythonpath = ["backend"]
 django_find_project = false
 testpaths = ["backend"]
+markers = [
+    "db_owner: run the test as helpdesk_owner instead of helpdesk_app (see backend/conftest.py)",
+]
 filterwarnings = [
     # STATIC_ROOT only exists after collectstatic, which runs in the image build.
     "ignore:No directory at:UserWarning",

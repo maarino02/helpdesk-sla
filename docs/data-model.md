@@ -201,27 +201,54 @@ which also starts with `calendar_id`.
 | `ticket_comment (ticket_id, created_at)` | Ordered comment thread. |
 | `ticket_event (ticket_id, created_at)` | Ticket history. |
 
+## Database roles and table privileges
+
+Two roles, created by `docker/postgres/roles.sql` (run as a superuser, idempotent):
+
+- `helpdesk_owner` owns the database and every table and runs the migrations
+  (`DATABASE_OWNER_URL`, given only to the process that migrates).
+- `helpdesk_app` is used by Django at runtime (`DATABASE_URL`). It owns nothing and
+  lacks `BYPASSRLS`.
+
+Privileges of `helpdesk_app` are deny by default: migration `core 0001` revokes
+everything and grants only what the application needs. `TRUNCATE`, `REFERENCES` and
+`TRIGGER` are never granted. Primary keys are identity columns, so `INSERT` needs no
+grant on the sequences.
+
+| Tables | Privileges | Reason |
+|---|---|---|
+| `ticket`, `organization`, `app_user` | `SELECT, INSERT, UPDATE` | Closed or deactivated, never deleted. |
+| `ticket_comment`, `ticket_event`, `sla_alert`, `django_admin_log` | `SELECT, INSERT` | Append-only history. |
+| `category`, `business_calendar`, `business_hours`, `holiday`, `sla_policy` | `SELECT, INSERT, UPDATE, DELETE` | Catalogs; RLS limits writes to admins. |
+| `django_session`, Django group and permission tables | `SELECT, INSERT, UPDATE, DELETE` | Sessions expire; the user admin edits groups. |
+| `django_content_type`, `auth_permission`, `django_migrations` | `SELECT` | Written only by `migrate`. |
+
+A migration that creates a table must grant its privileges in the same migration.
+`backend/tests/test_privileges.py` compares this matrix with the catalog and fails
+for any table without a decision.
+
 ## Row-Level Security
 
-The application connects as `helpdesk_app`, a role that does not own the tables and
-lacks `BYPASSRLS`. Migrations run as `helpdesk_owner`. `FORCE ROW LEVEL SECURITY` is
-enabled so that even the owner is subject to the policies.
+`FORCE ROW LEVEL SECURITY` is enabled so that even the owner is subject to the
+policies.
 
 After the JWT is validated, each transaction sets its context with
 `set_config('app.org_id', ..., true)` and `set_config('app.role', ..., true)`.
 The third argument scopes the value to the current transaction, which keeps it safe
 with connection pooling. If the context is missing, the policies match no rows:
-the system fails closed.
+the system fails closed. On a reused connection, a setting from an earlier
+transaction reads as `''`, not `NULL`, so the context functions treat both as missing.
+Requests run in one transaction each (`ATOMIC_REQUESTS`).
 
 | Table | Policy |
 |---|---|
 | `ticket` | Staff (agent or admin) see every row. Clients see rows of their own organization. |
 | `ticket_comment` | Same as `ticket`, and clients never see rows with `is_internal = true`. |
-| `ticket_event` | Same as `ticket`. `UPDATE` and `DELETE` are revoked from the application role. |
+| `ticket_event` | Same as `ticket`. Append-only: the application role has no `UPDATE` or `DELETE`. |
 | `organization` | Clients see only their own organization. |
 | `app_user` | Clients see users of their organization plus staff (to display the assignee). |
 | `sla_alert` | Staff only. |
-| Catalogs | `category`, calendars and `sla_policy` have no RLS; the application role has read-only access. |
+| Catalogs | `category`, calendars and `sla_policy` are shared by every organization: any role reads them, and write policies allow `INSERT`, `UPDATE` and `DELETE` only with `app.role = 'admin'`. |
 
 The application still filters by organization in its querysets. RLS is a second line
 of defense, and the explicit filter also helps the query planner.
