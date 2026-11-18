@@ -10,24 +10,30 @@ orchestrator restart healthy web containers in a loop without fixing anything.
 
 Both endpoints are public and never touch tenant tables, so they work without
 authentication or row-level security context.
+
+Both are excluded from ATOMIC_REQUESTS. Opening the request transaction needs
+the database: liveness would then depend on it, and in readiness a database
+outage would raise before the view runs, giving a 500 instead of the 503 below.
 """
 
 import logging
 
 import redis
 from django.conf import settings
-from django.db import DatabaseError, connection
+from django.db import DatabaseError, connection, transaction
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
 
 logger = logging.getLogger(__name__)
 
 
+@transaction.non_atomic_requests
 @require_GET
 def live(request):
     return JsonResponse({"status": "ok"})
 
 
+@transaction.non_atomic_requests
 @require_GET
 def ready(request):
     checks = {"database": _check_database(), "redis": _check_redis()}

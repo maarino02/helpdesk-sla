@@ -80,6 +80,17 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": env.db("DATABASE_URL"),
 }
+DATABASES["default"].update(
+    # One transaction per request: the row-level security context is set with
+    # set_config(..., true), which lasts only until the end of the transaction.
+    # Without it every query would run in its own transaction and lose the context.
+    ATOMIC_REQUESTS=True,
+    # Reuse connections for 60 s instead of opening one per request. Safe because
+    # the context never outlives its transaction. Health checks replace a
+    # connection that dropped while idle before the request uses it.
+    CONN_MAX_AGE=60,
+    CONN_HEALTH_CHECKS=True,
+)
 
 # Connects as helpdesk_owner, which owns the tables. Used only to run migrations
 # ("migrate --database owner"). Optional on purpose: only the process that migrates
