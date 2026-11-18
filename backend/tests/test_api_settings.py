@@ -29,9 +29,10 @@ urlpatterns = [path("undeclared/", UndeclaredPermissionsView.as_view())]
 def test_endpoints_deny_by_default(client):
     response = client.get("/undeclared/")
 
-    # 403, not 401: no authentication class is configured yet, so there is no
-    # WWW-Authenticate challenge to send.
-    assert response.status_code == 403
+    # 401 with a challenge: the default authentication class tells the client
+    # how to authenticate.
+    assert response.status_code == 401
+    assert response["WWW-Authenticate"].startswith("Bearer")
     assert "secret" not in response.content.decode()
     assert response["Content-Type"] == "application/json"
 

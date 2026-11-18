@@ -113,6 +113,16 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Required, like DATABASE_URL: a missing value fails at startup, not on the first task.
 REDIS_URL = env("REDIS_URL")
 
+# Cache (login throttling). Shared by every web process, unlike the default
+# per-process memory cache. A different Redis database from the Celery broker:
+# cache.clear() runs FLUSHDB and would also delete the queued tasks.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("REDIS_CACHE_URL"),
+    }
+}
+
 # Celery
 CELERY_BROKER_URL = REDIS_URL
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
@@ -157,14 +167,21 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # REST API (see ADR-0004). Deny by default: an endpoint that does not declare its
-# permissions requires an authenticated user. No authentication class yet: the
-# stock JWTAuthentication loads the user before the row-level security context
-# exists and would find nobody; the project's own class sets app.user_id first.
+# permissions requires an authenticated user.
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    # Sets the row-level security context of every DRF view: nothing to inherit,
+    # so nothing to forget. backend/tests/test_api_views.py fails for a view that
+    # replaces it without being on its allow-list.
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.accounts.authentication.RlsJWTAuthentication"],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
     # JSON only; dev.py adds the browsable API.
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_THROTTLE_RATES": {"login": "10/minute"},
+    # Throttling identifies clients by address. With the default (None), DRF uses
+    # the whole X-Forwarded-For header, which the client writes: a new value per
+    # attempt would bypass the limit. 0 uses REMOTE_ADDR; behind a proxy, set it
+    # to the number of proxies so the address the proxy saw is used.
+    "NUM_PROXIES": env.int("DRF_NUM_PROXIES", default=0),
 }
 
 # The token carries only the user id; role and organization are read from the

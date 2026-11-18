@@ -27,5 +27,9 @@ DEBUG = False
 SECRET_KEY = "test-only-not-secret"
 SIMPLE_JWT["SIGNING_KEY"] = "test-only-jwt-signing-key-not-secret"
 
+# Per-process memory: each test starts from a clean cache (conftest.py clears it)
+# and never touches the Redis databases of the development stack.
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+
 # Hashing passwords with PBKDF2 is deliberately slow; tests create many users.
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
