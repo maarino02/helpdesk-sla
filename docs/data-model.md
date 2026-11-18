@@ -245,10 +245,42 @@ Requests run in one transaction each (`ATOMIC_REQUESTS`).
 | `ticket` | Staff (agent or admin) see every row. Clients see rows of their own organization. |
 | `ticket_comment` | Same as `ticket`, and clients never see rows with `is_internal = true`. |
 | `ticket_event` | Same as `ticket`. Append-only: the application role has no `UPDATE` or `DELETE`. |
-| `organization` | Clients see only their own organization. |
-| `app_user` | Clients see users of their organization plus staff (to display the assignee). |
+| `organization` | Staff see every organization, clients only their own. Clients and agents may update only `next_ticket_number` (ticket numbering); only admins create or change anything else. |
+| `app_user` | Login context: only the row with `app.login_email`, read-only. `app.user_id`: the user's own row (read, and update `password`, `last_login`, `full_name`). Clients also see users of their organization plus staff (to display the assignee); staff see everyone. Only admins create users or change other columns. |
 | `sla_alert` | Staff only. |
-| Catalogs | `category`, calendars and `sla_policy` are shared by every organization: any role reads them, and write policies allow `INSERT`, `UPDATE` and `DELETE` only with `app.role = 'admin'`. |
+| Catalogs | `category`, calendars, business hours and holidays: every known role reads, only admins write. `sla_policy` is the same, except that clients see only the default policies and their own organization's. |
+
+The context is read by `app_role()`, `app_org_id()`, `app_user_id()` and
+`app_login_email()` (SQL, `STABLE`, `NULL` when missing). Client tables use one
+`FOR ALL` policy each, whose `USING` expression also acts as `WITH CHECK`; internal
+notes are hidden from clients by a separate `RESTRICTIVE` policy on `ticket_comment`.
+Catalogs combine a `FOR SELECT` policy for readers with a `FOR ALL` policy for admins:
+permissive policies are combined with `OR` for each command, so only the second one
+applies to writes. `app.role = 'system'` is set only by background jobs and management
+commands, never from a request.
+
+Row-level security works on rows, not columns. On `app_user` and `organization`, a
+`BEFORE UPDATE` trigger (`app_restrict_update`) lets roles other than admin and
+system change only an allow-list of columns; it compares the rows as `jsonb` without
+those columns, so a column added later is protected by default. A client can still
+read the staff rows of `app_user`, including the password hash: the application must
+never serialize it.
+
+Other ways around the policies, and why they are closed:
+
+- Views run with their owner's privileges unless created `WITH (security_invoker = true)`,
+  which every view in `public` must use. Materialized views have no RLS at all, so
+  none may exist without an explicit decision. Both rules are checked against the
+  catalog in `backend/tests/test_rls_schema.py`.
+- A function in the `WHERE` clause cannot observe rows the policies hide: policies act
+  as a security barrier and run first unless the function is `LEAKPROOF`, which only a
+  superuser can declare. `backend/tests/test_isolation.py` runs that attack.
+- A unique constraint can reveal that an invisible row exists ("this value already
+  exists"). The tables with global uniqueness (`organization.slug`, `app_user.email`,
+  `category.name`) are written only by admins and the system context; ticket numbers
+  are unique per organization.
 
 The application still filters by organization in its querysets. RLS is a second line
-of defense, and the explicit filter also helps the query planner.
+of defense, and the explicit filter is what lets the planner use the
+`(organization_id, ...)` indexes: the policy is an `OR` of the staff and client
+branches, so PostgreSQL applies it as a row filter, not as an index condition.
