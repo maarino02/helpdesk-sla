@@ -14,58 +14,36 @@ from apps.tickets.tests.factories import (
     TicketCommentFactory,
     TicketFactory,
 )
+from tests.rls import fetchone, set_context
 
 pytestmark = pytest.mark.django_db
 
 STAFF_ROLES = ["agent", "admin", "system"]
 
 
-def set_context(role=None, org_id=None):
-    # '' is how a missing value reads on a reused connection; the functions
-    # must treat it as NULL.
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT set_config('app.role', %s, true), set_config('app.org_id', %s, true)",
-            [role or "", str(org_id or "")],
-        )
-
-
-def fetchone(sql, params=None):
-    with connection.cursor() as cursor:
-        cursor.execute(sql, params)
-        return cursor.fetchone()
-
-
 # Context functions
 
 
-def test_context_functions_read_the_transaction_settings():
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT set_config('app.role', 'client', true),"
-            " set_config('app.org_id', '7', true),"
-            " set_config('app.user_id', '9', true)"
-        )
+CONTEXT_FUNCTIONS = "SELECT app_role(), app_org_id(), app_user_id(), app_login_email()"
 
-    assert fetchone("SELECT app_role(), app_org_id(), app_user_id()") == ("client", 7, 9)
+
+def test_context_functions_read_the_transaction_settings():
+    set_context("client", org_id=7, user_id=9, login_email="ana@example.com")
+
+    assert fetchone(CONTEXT_FUNCTIONS) == ("client", 7, 9, "ana@example.com")
 
 
 def test_context_functions_treat_empty_settings_as_null():
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT set_config('app.role', '', true),"
-            " set_config('app.org_id', '', true),"
-            " set_config('app.user_id', '', true)"
-        )
+    set_context(None)  # Every setting to ''.
 
-    assert fetchone("SELECT app_role(), app_org_id(), app_user_id()") == (None, None, None)
+    assert fetchone(CONTEXT_FUNCTIONS) == (None, None, None, None)
 
 
 @pytest.mark.django_db(transaction=True)
 def test_context_functions_return_null_when_never_set():
     connection.close()  # A new session, where the settings were never defined.
 
-    assert fetchone("SELECT app_role(), app_org_id(), app_user_id()") == (None, None, None)
+    assert fetchone(CONTEXT_FUNCTIONS) == (None, None, None, None)
 
 
 # Tickets
