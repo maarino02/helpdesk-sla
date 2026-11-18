@@ -266,6 +266,20 @@ those columns, so a column added later is protected by default. A client can sti
 read the staff rows of `app_user`, including the password hash: the application must
 never serialize it.
 
+Other ways around the policies, and why they are closed:
+
+- Views run with their owner's privileges unless created `WITH (security_invoker = true)`,
+  which every view in `public` must use. Materialized views have no RLS at all, so
+  none may exist without an explicit decision. Both rules are checked against the
+  catalog in `backend/tests/test_rls_schema.py`.
+- A function in the `WHERE` clause cannot observe rows the policies hide: policies act
+  as a security barrier and run first unless the function is `LEAKPROOF`, which only a
+  superuser can declare. `backend/tests/test_isolation.py` runs that attack.
+- A unique constraint can reveal that an invisible row exists ("this value already
+  exists"). The tables with global uniqueness (`organization.slug`, `app_user.email`,
+  `category.name`) are written only by admins and the system context; ticket numbers
+  are unique per organization.
+
 The application still filters by organization in its querysets. RLS is a second line
 of defense, and the explicit filter is what lets the planner use the
 `(organization_id, ...)` indexes: the policy is an `OR` of the staff and client
