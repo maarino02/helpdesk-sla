@@ -43,7 +43,9 @@ and `token_type` claims. Role and organization always come from the database.
 
 Background jobs and management commands set `app.role = 'system'`, which sees every
 organization. It is never set from a request: the role always comes from the user's
-row, and no request parameter can choose it.
+row, and no request parameter can choose it. `system_context()` opens a durable
+transaction, which Django refuses to nest inside the request transaction, so a view
+cannot switch to it.
 
 Token settings:
 
@@ -53,11 +55,26 @@ Token settings:
 - Sent in the `Authorization: Bearer` header, so the API needs no CSRF protection.
 - `UPDATE_LAST_LOGIN` stays off in simplejwt: it would write during the read-only
   login phase. The login view updates `last_login` after widening the context.
+- Refreshing checks that the user still exists and is active (phases 2 and 3), so a
+  deactivated user cannot obtain new access tokens.
+- Login is throttled per client address (10 attempts per minute), counted in a Redis
+  cache shared by every web process. The address is `REMOTE_ADDR` unless
+  `DRF_NUM_PROXIES` says how many proxies to trust, because `X-Forwarded-For` is
+  written by the client.
+
+**Where the context is set.** ADR-0001 planned a shared base view. Instead the
+context is set by the authentication class itself, `RlsJWTAuthentication`: a
+subclass of simplejwt's that verifies the token and then calls `activate_user`
+(phases 2 and 3) instead of querying `app_user` with no context. It is the default
+authentication class, and DRF authenticates in `APIView.initial()`, inside the
+request transaction, so every DRF view gets the context without inheriting from
+anything. A test walks the URLconf and fails for any DRF view that replaces it,
+except an explicit allow-list (login and refresh). The Django admin uses sessions:
+the authentication backend's `get_user` calls the same `activate_user`.
 
 Django REST Framework denies by default: `IsAuthenticated` is the default permission
-and only the JSON renderer is enabled outside development. The authentication class
-is a subclass of simplejwt's that sets `app.user_id` before loading the user; the
-stock class would query `app_user` with no context and find nobody.
+and only the JSON renderer is enabled outside development. Role permissions
+(`IsClient`, `IsStaff`, `IsAdmin`) read the role loaded in phase 3.
 
 ## Alternatives considered
 
@@ -82,6 +99,13 @@ policies. The login policy keeps the rule in the same place as all the others.
 Connections are reused across requests (`CONN_MAX_AGE`). A session-level value would
 survive into the next request on the same connection, possibly another user's. A
 transaction-local value cannot leak; a test checks it.
+
+### A shared base view
+
+The plan in ADR-0001. Every API view would inherit from a base class that sets the
+context after authentication. It is one more thing to remember in every view, and
+forgetting it fails silently (no data). The default authentication class already
+runs at the right moment in every DRF view.
 
 ### Refresh token rotation with a blacklist
 
@@ -109,8 +133,8 @@ other way round.
 ### Negative and risks
 
 - One extra query per request (the user's own row), plus the `set_config` calls.
-- A view that skipped the shared base view would run without context and see no
-  data. Safe, but a bug, found by the first test of that endpoint.
+- A view that replaced the authentication classes would run without context and
+  see no data. Safe, but a bug; the URLconf test catches it.
 - A stolen refresh token is valid for up to one day, unless the user is deactivated.
 - Where the frontend stores the tokens (memory or an `httpOnly` cookie) is decided
   with the frontend; a cookie would bring CSRF protection back into scope.
