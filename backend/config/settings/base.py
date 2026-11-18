@@ -5,6 +5,7 @@ override what they need. Values that depend on the deployment are read from
 environment variables; design decisions (UTC, bigint keys) are fixed in code.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -32,6 +33,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # PostgreSQL-specific features: exclusion constraints, range fields, extensions.
     "django.contrib.postgres",
+    # simplejwt needs no entry: without its blacklist app it has no models.
+    "rest_framework",
     # Local apps
     "apps.accounts",
     "apps.core",
@@ -146,6 +149,37 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# REST API (see ADR-0004). Deny by default: an endpoint that does not declare its
+# permissions requires an authenticated user. No authentication class yet: the
+# stock JWTAuthentication loads the user before the row-level security context
+# exists and would find nobody; the project's own class sets app.user_id first.
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    # JSON only; dev.py adds the browsable API.
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+}
+
+# The token carries only the user id; role and organization are read from the
+# database on every request. No rotation or blacklist: the per-request lookup
+# already rejects deactivated users.
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
+    # It would write last_login in the read-only login context.
+    "UPDATE_LAST_LOGIN": False,
+    "ALGORITHM": "HS256",
+    # Set by each environment from JWT_SIGNING_KEY, separate from SECRET_KEY so each
+    # can be rotated alone. None here, not simplejwt's fallback to SECRET_KEY: an
+    # environment that forgot it fails when signing instead of silently sharing keys.
+    "SIGNING_KEY": None,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+}
 
 # Internationalization
 # Timestamps are always stored and handled in UTC. Each client's time zone is only

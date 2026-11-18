@@ -5,11 +5,13 @@ at startup instead of running with an unsafe default.
 """
 
 from .base import *  # noqa: F403
-from .base import env
+from .base import SIMPLE_JWT, env
 
 DEBUG = False
 
 SECRET_KEY = env("DJANGO_SECRET_KEY")
+# Separate from SECRET_KEY (ADR-0004). Generate with secrets.token_urlsafe(50).
+SIMPLE_JWT["SIGNING_KEY"] = env("JWT_SIGNING_KEY")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 
