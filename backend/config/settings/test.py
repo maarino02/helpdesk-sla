@@ -3,7 +3,7 @@
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F403
-from .base import DATABASES, env
+from .base import DATABASES, SIMPLE_JWT, env
 
 # The test database is created and migrated as helpdesk_owner: the application
 # role cannot create databases. Each test then switches to helpdesk_app with
@@ -25,6 +25,11 @@ if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
 DEBUG = False
 
 SECRET_KEY = "test-only-not-secret"
+SIMPLE_JWT["SIGNING_KEY"] = "test-only-jwt-signing-key-not-secret"
+
+# Per-process memory: each test starts from a clean cache (conftest.py clears it)
+# and never touches the Redis databases of the development stack.
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
 # Hashing passwords with PBKDF2 is deliberately slow; tests create many users.
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]

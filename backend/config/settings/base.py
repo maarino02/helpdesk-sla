@@ -5,6 +5,7 @@ override what they need. Values that depend on the deployment are read from
 environment variables; design decisions (UTC, bigint keys) are fixed in code.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -24,6 +25,9 @@ if ENV_FILE.is_file():
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 INSTALLED_APPS = [
+    # Before django.contrib.auth: its createsuperuser and changepassword commands
+    # are replaced by versions that run with the row-level security context.
+    "apps.accounts",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -32,8 +36,9 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # PostgreSQL-specific features: exclusion constraints, range fields, extensions.
     "django.contrib.postgres",
+    # simplejwt needs no entry: without its blacklist app it has no models.
+    "rest_framework",
     # Local apps
-    "apps.accounts",
     "apps.core",
     "apps.sla",
     "apps.organizations",
@@ -50,6 +55,9 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Right after the lazy request.user exists: the admin's view and rendering
+    # share one transaction, and so one row-level security context.
+    "apps.core.middleware.AdminRlsMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -108,6 +116,16 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Required, like DATABASE_URL: a missing value fails at startup, not on the first task.
 REDIS_URL = env("REDIS_URL")
 
+# Cache (login throttling). Shared by every web process, unlike the default
+# per-process memory cache. A different Redis database from the Celery broker:
+# cache.clear() runs FLUSHDB and would also delete the queued tasks.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": env("REDIS_CACHE_URL"),
+    }
+}
+
 # Celery
 CELERY_BROKER_URL = REDIS_URL
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
@@ -140,12 +158,54 @@ SECURE_REDIRECT_EXEMPT = [r"^health/"]
 # Authentication
 AUTH_USER_MODEL = "accounts.User"
 
+# Replaces ModelBackend: looks users up in the login context and switches to the
+# user's own context once authenticated (ADR-0004).
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.RlsModelBackend"]
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
+
+# REST API (see ADR-0004). Deny by default: an endpoint that does not declare its
+# permissions requires an authenticated user.
+REST_FRAMEWORK = {
+    # Sets the row-level security context of every DRF view: nothing to inherit,
+    # so nothing to forget. backend/tests/test_api_views.py fails for a view that
+    # replaces it without being on its allow-list.
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.accounts.authentication.RlsJWTAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    # JSON only; dev.py adds the browsable API.
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_THROTTLE_RATES": {"login": "10/minute"},
+    # Throttling identifies clients by address. With the default (None), DRF uses
+    # the whole X-Forwarded-For header, which the client writes: a new value per
+    # attempt would bypass the limit. 0 uses REMOTE_ADDR; behind a proxy, set it
+    # to the number of proxies so the address the proxy saw is used.
+    "NUM_PROXIES": env.int("DRF_NUM_PROXIES", default=0),
+}
+
+# The token carries only the user id; role and organization are read from the
+# database on every request. No rotation or blacklist: the per-request lookup
+# already rejects deactivated users.
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
+    # It would write last_login in the read-only login context.
+    "UPDATE_LAST_LOGIN": False,
+    "ALGORITHM": "HS256",
+    # Set by each environment from JWT_SIGNING_KEY, separate from SECRET_KEY so each
+    # can be rotated alone. None here, not simplejwt's fallback to SECRET_KEY: an
+    # environment that forgot it fails when signing instead of silently sharing keys.
+    "SIGNING_KEY": None,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+}
 
 # Internationalization
 # Timestamps are always stored and handled in UTC. Each client's time zone is only

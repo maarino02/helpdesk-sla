@@ -13,6 +13,7 @@ x-app: &app
   # container itself. Other services are reached by name on the compose network.
   environment: &app-environment
     DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env}
+    JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:?set JWT_SIGNING_KEY in .env}
     DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
     # No TLS locally. Secure cookies still work on http://localhost, which
     # browsers treat as a secure context.
@@ -22,6 +23,7 @@ x-app: &app
     # only to the migrate service.
     DATABASE_URL: postgres://helpdesk_app:${HELPDESK_APP_PASSWORD:-helpdesk_app}@db:5432/${POSTGRES_DB:-helpdesk}?connect_timeout=5
     REDIS_URL: redis://redis:6379/0
+    REDIS_CACHE_URL: redis://redis:6379/1
 
 services:
   db:

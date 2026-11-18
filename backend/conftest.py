@@ -1,7 +1,16 @@
 """Fixtures shared by the whole test suite."""
 
 import pytest
+from django.core.cache import cache
 from django.db import connection
+
+
+@pytest.fixture(autouse=True)
+def _clear_cache():
+    """Throttling counters live in the cache: one test must not use up another's."""
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture(autouse=True)

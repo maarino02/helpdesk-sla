@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-11-12
+- Refined by: [ADR-0004](0004-rls-request-context.md), which sets the request context
+  in the default authentication class instead of a shared base view.
 
 ## Context
 
