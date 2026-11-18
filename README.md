@@ -5,7 +5,7 @@
 Multi-tenant helpdesk with SLA tracking in business hours, built with Django,
 PostgreSQL Row-Level Security and Celery.
 
-> **Status:** in development. Phase 2 (data model) is complete; phase 3 (auth & isolation) is next. See the [roadmap](#roadmap).
+> **Status:** in development. Phase 3 (auth & isolation) is complete; phase 4 (tickets API) is next. See the [roadmap](#roadmap).
 
 ## Overview
 
@@ -47,7 +47,7 @@ A background process watches those deadlines and raises alerts before they are b
 - [x] **Phase 0 - Design:** data model, state machine and architecture decisions
 - [x] **Phase 1 - Skeleton:** Django project, Docker Compose, tests and CI
 - [x] **Phase 2 - Data model:** models, constraints, indexes and migrations
-- [ ] **Phase 3 - Auth & isolation:** JWT, roles and Row-Level Security policies
+- [x] **Phase 3 - Auth & isolation:** JWT, roles and Row-Level Security policies
 - [ ] **Phase 4 - Tickets API:** CRUD, state transitions, comments and event history
 - [ ] **Phase 5 - SLA engine:** business-time calculation, holidays and pauses
 - [ ] **Phase 6 - Background jobs:** SLA alerts and auto-close with Celery
@@ -58,6 +58,11 @@ A background process watches those deadlines and raises alerts before they are b
 
 ## Getting started
 
+This section is the quick start. Everything else about running and extending the
+project (every environment variable, the database roles, migrations, working with data
+under Row-Level Security, the API, the two kinds of tests, a checklist for new tables
+and troubleshooting) is in the **[development guide](docs/development.md)**.
+
 ### Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) with Compose v2
@@ -67,11 +72,16 @@ A background process watches those deadlines and raises alerts before they are b
 Every `make` target runs a single command, so without make you can copy it from the
 [Makefile](Makefile).
 
-Copy the example configuration first. Its values are for local development only:
+Copy the example configuration first. Its values are for local development only;
+set your own `JWT_SIGNING_KEY` (the file explains how to generate one):
 
 ```sh
 cp .env.example .env
 ```
+
+On first start, the database container creates two roles: `helpdesk_owner`, which owns
+the tables and runs the migrations, and `helpdesk_app`, which the application uses and
+which is always subject to Row-Level Security.
 
 ### Run the full stack in Docker
 
@@ -99,8 +109,9 @@ Run Django and Celery on your machine against the database and Redis containers:
 uv sync                      # create .venv with all dependencies
 uv run pre-commit install    # run ruff before each commit
 make up                      # start only PostgreSQL and Redis
-make migrate
-make run                     # http://127.0.0.1:8000
+make migrate                 # as helpdesk_owner
+uv run backend/manage.py createsuperuser
+make run                     # http://127.0.0.1:8000 (admin at /admin/)
 ```
 
 If you need background tasks, start `make worker` and `make beat` in other terminals.
@@ -117,11 +128,22 @@ two beat schedulers would send every periodic task twice.
 | `make migrations-check` | Fail if a model change has no migration                  |
 | `make makemigrations`   | Create migrations for model changes                      |
 | `make psql`             | Open a SQL console in the database container             |
+| `make db-roles`         | Create or update the database roles (idempotent)         |
 | `make ps` / `make logs` | Show container status / follow container logs            |
 | `make down`             | Stop and remove all containers                           |
 
+### Authentication
+
+The API uses JSON Web Tokens: `POST /api/auth/token/` with email and password,
+`POST /api/auth/token/refresh/`, and `GET /api/me/`. The token carries only the user
+id; role and organization are read from the database on every request, so a change of
+role or a deactivation applies at once. See [ADR-0004](docs/adr/0004-rls-request-context.md)
+and the [API section](docs/development.md#using-the-api) of the development guide.
+
 ## Documentation
 
+- [Development guide](docs/development.md): configuration, database roles, working
+  with Row-Level Security, tests, checklist for new tables, troubleshooting
 - [Data model](docs/data-model.md): ER diagram, constraints, indexes and RLS policies
 - [Ticket state machine](docs/state-machine.md): states, transitions and permissions
 - Architecture decision records:
