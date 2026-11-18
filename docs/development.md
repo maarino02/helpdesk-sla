@@ -108,10 +108,10 @@ no rows, with no error. `apps/core/rls.py` is the only module that sets it.
 from apps.core.rls import system_context
 from apps.accounts.models import User
 
-User.objects.count()        # 0: no context
+User.objects.count()  # 0: no context
 
 with system_context():
-    User.objects.count()    # every user
+    User.objects.count()  # every user
 ```
 
 `createsuperuser` and `changepassword` are overridden to run with `system_context()`.
