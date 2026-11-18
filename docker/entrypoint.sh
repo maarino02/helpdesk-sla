@@ -31,7 +31,8 @@ case "$role" in
     exec celery -A config beat --loglevel=info --schedule /tmp/celerybeat-schedule "$@"
     ;;
   migrate)
-    exec python manage.py migrate --noinput "$@"
+    # As helpdesk_owner: needs DATABASE_OWNER_URL, given only to this role.
+    exec python manage.py migrate --database owner --noinput "$@"
     ;;
   *)
     exec "$role" "$@"

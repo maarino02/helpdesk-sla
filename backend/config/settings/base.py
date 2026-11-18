@@ -76,9 +76,31 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # Required in every environment and always PostgreSQL: there is no SQLite
 # fallback, so a missing variable fails loudly instead of silently changing engine.
+# Connects as helpdesk_app, which is always subject to row-level security.
 DATABASES = {
     "default": env.db("DATABASE_URL"),
 }
+DATABASES["default"].update(
+    # One transaction per request: the row-level security context is set with
+    # set_config(..., true), which lasts only until the end of the transaction.
+    # Without it every query would run in its own transaction and lose the context.
+    ATOMIC_REQUESTS=True,
+    # Reuse connections for 60 s instead of opening one per request. Safe because
+    # the context never outlives its transaction. Health checks replace a
+    # connection that dropped while idle before the request uses it.
+    CONN_MAX_AGE=60,
+    CONN_HEALTH_CHECKS=True,
+)
+
+# Connects as helpdesk_owner, which owns the tables. Used only to run migrations
+# ("migrate --database owner"). Optional on purpose: only the process that migrates
+# is given this password, so web and worker processes cannot alter tables or
+# row-level security policies even if they are compromised.
+# No database router: "migrate" on the default alias must fail (helpdesk_app
+# cannot create tables), not skip the operations and still record the
+# migrations as applied in the shared django_migrations table.
+if env.str("DATABASE_OWNER_URL", default=""):
+    DATABASES["owner"] = env.db("DATABASE_OWNER_URL")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

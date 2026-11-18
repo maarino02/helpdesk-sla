@@ -4,7 +4,7 @@
 # PowerShell, cmd and sh, so this file works on Windows, macOS, Linux and in CI.
 # Keep shell logic (conditionals, loops, rm...) out of the recipes.
 
-.PHONY: up up-app down ps logs psql run migrate makemigrations migrations-check test lint format worker beat
+.PHONY: up up-app down ps logs psql db-roles run migrate makemigrations migrations-check test lint format worker beat
 
 # Start the services in the background and wait until their healthchecks pass.
 up:
@@ -30,12 +30,18 @@ logs:
 psql:
 	docker compose exec db psql
 
+# Create or update the database roles (helpdesk_owner, helpdesk_app). Runs on its
+# own when the volume is created; safe to repeat, for example to rotate passwords.
+db-roles:
+	docker compose exec db psql -f /docker-entrypoint-initdb.d/10-roles.sql
+
 # Django development server on the host, against the containers.
 run:
 	uv run backend/manage.py runserver
 
+# As helpdesk_owner (DATABASE_OWNER_URL): the application role cannot create tables.
 migrate:
-	uv run backend/manage.py migrate
+	uv run backend/manage.py migrate --database owner
 
 makemigrations:
 	uv run backend/manage.py makemigrations
