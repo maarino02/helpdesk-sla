@@ -85,4 +85,13 @@ jobs:
 
       - run: make migrations-check
 
+      # Service containers start before the checkout, so they cannot mount the
+      # script like docker-compose.yml does. The runner's own psql runs it instead.
+      - name: Create database roles
+        run: psql -h 127.0.0.1 -U helpdesk -d helpdesk -f docker/postgres/roles.sql
+        env:
+          PGPASSWORD: helpdesk
+          HELPDESK_OWNER_PASSWORD: helpdesk_owner
+          HELPDESK_APP_PASSWORD: helpdesk_app
+
       - run: make test
