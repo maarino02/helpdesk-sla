@@ -76,9 +76,20 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database
 # Required in every environment and always PostgreSQL: there is no SQLite
 # fallback, so a missing variable fails loudly instead of silently changing engine.
+# Connects as helpdesk_app, which is always subject to row-level security.
 DATABASES = {
     "default": env.db("DATABASE_URL"),
 }
+
+# Connects as helpdesk_owner, which owns the tables. Used only to run migrations
+# ("migrate --database owner"). Optional on purpose: only the process that migrates
+# is given this password, so web and worker processes cannot alter tables or
+# row-level security policies even if they are compromised.
+# No database router: "migrate" on the default alias must fail (helpdesk_app
+# cannot create tables), not skip the operations and still record the
+# migrations as applied in the shared django_migrations table.
+if env.str("DATABASE_OWNER_URL", default=""):
+    DATABASES["owner"] = env.db("DATABASE_OWNER_URL")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

@@ -39,8 +39,9 @@ db-roles:
 run:
 	uv run backend/manage.py runserver
 
+# As helpdesk_owner (DATABASE_OWNER_URL): the application role cannot create tables.
 migrate:
-	uv run backend/manage.py migrate
+	uv run backend/manage.py migrate --database owner
 
 makemigrations:
 	uv run backend/manage.py makemigrations

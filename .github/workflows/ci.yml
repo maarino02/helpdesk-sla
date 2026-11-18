@@ -70,7 +70,8 @@ jobs:
     # The job runs on the runner, not in a container, so services are reached
     # through their published ports on 127.0.0.1.
     env:
-      DATABASE_URL: postgres://helpdesk:helpdesk@127.0.0.1:5432/helpdesk?connect_timeout=5
+      DATABASE_URL: postgres://helpdesk_app:helpdesk_app@127.0.0.1:5432/helpdesk?connect_timeout=5
+      DATABASE_OWNER_URL: postgres://helpdesk_owner:helpdesk_owner@127.0.0.1:5432/helpdesk?connect_timeout=5
       REDIS_URL: redis://127.0.0.1:6379/0
 
     steps:
@@ -83,8 +84,7 @@ jobs:
 
       - run: uv sync --locked
 
-      - run: make migrations-check
-
+      # Before any Django command: both connection URLs use these roles.
       # Service containers start before the checkout, so they cannot mount the
       # script like docker-compose.yml does. The runner's own psql runs it instead.
       - name: Create database roles
@@ -93,5 +93,7 @@ jobs:
           PGPASSWORD: helpdesk
           HELPDESK_OWNER_PASSWORD: helpdesk_owner
           HELPDESK_APP_PASSWORD: helpdesk_app
+
+      - run: make migrations-check
 
       - run: make test
