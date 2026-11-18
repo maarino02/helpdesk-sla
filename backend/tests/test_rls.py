@@ -191,6 +191,11 @@ def test_application_filter_uses_the_index_under_row_level_security():
         )
         plan = "\n".join(row[0] for row in cursor.fetchall())
 
-    assert "ticket_org_status_idx" in plan
-    assert "Index Cond: ((organization_id = 1)" in plan
+    # Which index depends on the table statistics (ticket_org_status_idx, or the
+    # unique (id, organization_id) one): what matters is that the application
+    # filter is the index condition and the policy stays as a filter.
+    index_conditions = [line for line in plan.splitlines() if "Index Cond:" in line]
+    assert "Seq Scan" not in plan
+    assert any("organization_id = 1" in line for line in index_conditions)
+    assert not any("current_setting" in line for line in index_conditions)
     assert "current_setting('app.role'" in plan  # The policy is still applied.
