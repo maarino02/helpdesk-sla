@@ -25,6 +25,9 @@ if ENV_FILE.is_file():
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 INSTALLED_APPS = [
+    # Before django.contrib.auth: its createsuperuser and changepassword commands
+    # are replaced by versions that run with the row-level security context.
+    "apps.accounts",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -36,7 +39,6 @@ INSTALLED_APPS = [
     # simplejwt needs no entry: without its blacklist app it has no models.
     "rest_framework",
     # Local apps
-    "apps.accounts",
     "apps.core",
     "apps.sla",
     "apps.organizations",
@@ -142,6 +144,10 @@ SECURE_REDIRECT_EXEMPT = [r"^health/"]
 
 # Authentication
 AUTH_USER_MODEL = "accounts.User"
+
+# Replaces ModelBackend: looks users up in the login context and switches to the
+# user's own context once authenticated (ADR-0004).
+AUTHENTICATION_BACKENDS = ["apps.accounts.backends.RlsModelBackend"]
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
