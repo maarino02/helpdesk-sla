@@ -72,6 +72,15 @@ anything. A test walks the URLconf and fails for any DRF view that replaces it,
 except an explicit allow-list (login and refresh). The Django admin uses sessions:
 the authentication backend's `get_user` calls the same `activate_user`.
 
+**The admin renders after the view.** Django renders `TemplateResponse` objects after
+the view returns, outside the `ATOMIC_REQUESTS` transaction, and the admin's templates
+run queries of their own (the choices of a foreign key `<select>`, related objects).
+Without context they would silently return nothing: an empty organization list in a
+user's form. `AdminRlsMiddleware` wraps each admin request, rendering included, in
+one transaction; the first access to `request.user` inside it sets the context for
+the whole request. API responses need no such wrapper: they only encode data the
+serializers already read inside the view.
+
 Django REST Framework denies by default: `IsAuthenticated` is the default permission
 and only the JSON renderer is enabled outside development. Role permissions
 (`IsClient`, `IsStaff`, `IsAdmin`) read the role loaded in phase 3.
