@@ -185,17 +185,18 @@ def test_application_filter_uses_the_index_under_row_level_security():
     set_context("client", 1)
     with connection.cursor() as cursor:
         cursor.execute("SET LOCAL enable_seqscan = off")  # Tables are tiny in tests.
-        cursor.execute(
-            "EXPLAIN (COSTS OFF)"
-            " SELECT id FROM ticket WHERE organization_id = 1 AND status = 'open'"
-        )
+        # Only the organization filter: with another condition (status) the planner
+        # may prefer an index on that column instead, depending on statistics that
+        # autovacuum refreshes in the background at unpredictable moments.
+        cursor.execute("EXPLAIN (COSTS OFF) SELECT id FROM ticket WHERE organization_id = 1")
         plan = "\n".join(row[0] for row in cursor.fetchall())
 
-    # Which index depends on the table statistics (ticket_org_status_idx, or the
-    # unique (id, organization_id) one): what matters is that the application
-    # filter is the index condition and the policy stays as a filter.
+    # Which index also depends on the statistics (ticket_org_status_idx, the unique
+    # (organization_id, number) or (id, organization_id)); every candidate has
+    # organization_id. What matters is that the application filter is the index
+    # condition and the policy stays as a filter.
     index_conditions = [line for line in plan.splitlines() if "Index Cond:" in line]
-    assert "Seq Scan" not in plan
-    assert any("organization_id = 1" in line for line in index_conditions)
-    assert not any("current_setting" in line for line in index_conditions)
-    assert "current_setting('app.role'" in plan  # The policy is still applied.
+    assert "Seq Scan" not in plan, plan
+    assert any("organization_id = 1" in line for line in index_conditions), plan
+    assert not any("current_setting" in line for line in index_conditions), plan
+    assert "current_setting('app.role'" in plan, plan  # The policy is still applied.
