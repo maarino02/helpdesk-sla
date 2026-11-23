@@ -3,6 +3,7 @@ import datetime
 import factory
 
 from apps.sla.models import (
+    END_OF_DAY,
     BusinessCalendar,
     BusinessHours,
     Holiday,
@@ -18,6 +19,29 @@ class BusinessCalendarFactory(factory.django.DjangoModelFactory):
 
     name = factory.Sequence(lambda n: f"Calendar {n}")
     timezone = "Europe/Madrid"
+
+
+class AlwaysOpenCalendarFactory(BusinessCalendarFactory):
+    """A 24/7 calendar: business time equals wall-clock time.
+
+    The organizations of the test data use it, so tests about tickets get exact
+    values without depending on working hours. Tests about business time build
+    their own calendars.
+    """
+
+    class Meta:
+        # The hook only adds slots; the calendar itself needs no second save.
+        skip_postgeneration_save = True
+
+    name = factory.Sequence(lambda n: f"24/7 {n}")
+
+    @factory.post_generation
+    def always_open(obj, create, extracted, **kwargs):
+        if create:
+            BusinessHours.objects.bulk_create(
+                BusinessHours(calendar=obj, weekday=day, start_time=END_OF_DAY, end_time=END_OF_DAY)
+                for day in Weekday
+            )
 
 
 class BusinessHoursFactory(factory.django.DjangoModelFactory):

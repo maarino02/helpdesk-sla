@@ -1,7 +1,8 @@
 """update_ticket(): assignee, category and priority, with its SLA effects.
 
 Tickets are created at NOW with the medium policy (first response 60, resolution
-480). Business time is provisionally wall-clock time, so values are exact.
+480). Organizations have a 24/7 calendar in the test data, so business time
+equals wall-clock time and values are exact.
 """
 
 from datetime import UTC, datetime, timedelta

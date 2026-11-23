@@ -157,8 +157,8 @@ writing outside Django. They are not repeated in the table below.
 | `app_user` | `CHECK (NOT is_staff OR role <> 'client')` | Clients never access the Django admin. |
 | `app_user` | `UNIQUE (id, organization_id)` | Target for the requester composite foreign key. |
 | `category` | `UNIQUE (lower(name))` | No duplicated categories differing only in case; the name keeps the case it was typed with. |
-| `business_hours` | `CHECK (start_time < end_time)`, `CHECK (weekday BETWEEN 0 AND 6)` | Valid time slots. |
-| `business_hours` | `EXCLUDE USING gist (calendar_id WITH =, weekday WITH =, tsrange(...) WITH &&)` | Slots of the same calendar and weekday never overlap, so business minutes are not counted twice. Adjacent slots (09-14, 14-18) are allowed. Needs the `btree_gist` extension; times are placed on a fixed date because PostgreSQL has no time range type. |
+| `business_hours` | `CHECK (start_time < end_time OR end_time = '00:00')`, `CHECK (weekday BETWEEN 0 AND 6)` | Valid time slots. As an end, `00:00` means 24:00: `22:00-00:00` is a night shift until midnight and `00:00-00:00` a whole day, so a 24/7 calendar is seven of them. A shift that crosses midnight is two slots, one on each day. |
+| `business_hours` | `EXCLUDE USING gist (calendar_id WITH =, weekday WITH =, tsrange(...) WITH &&)` | Slots of the same calendar and weekday never overlap, so business minutes are not counted twice. Adjacent slots (09-14, 14-18) are allowed. Needs the `btree_gist` extension; times are placed on a fixed date because PostgreSQL has no time range type, and an end of `00:00` on the next date. |
 | `holiday` | `UNIQUE (calendar_id, date)` | No duplicated holidays. |
 | `sla_policy` | `UNIQUE NULLS NOT DISTINCT (organization_id, priority)` | Only one default policy per priority (PostgreSQL 15+). |
 | `sla_policy` | `CHECK (resolution_minutes >= first_response_minutes AND first_response_minutes > 0)` | Sensible deadlines. |

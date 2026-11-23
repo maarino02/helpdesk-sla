@@ -39,8 +39,8 @@ def default_policy(priority):
 
 
 def minutes_after_now(minutes):
-    # Real time, not business time: enough for test data until the SLA engine
-    # (phase 5) computes the real deadlines.
+    # Real time: the factory skips the services. Tests that check deadlines create
+    # tickets with create_ticket, which computes them in business time.
     return timezone.now() + datetime.timedelta(minutes=minutes)
 
 

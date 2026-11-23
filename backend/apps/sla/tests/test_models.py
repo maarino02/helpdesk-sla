@@ -8,6 +8,7 @@ from django.db.models import ProtectedError
 from apps.organizations.tests.factories import OrganizationFactory
 from apps.sla.models import BusinessHours, Holiday, Priority, Weekday
 from apps.sla.tests.factories import (
+    AlwaysOpenCalendarFactory,
     BusinessCalendarFactory,
     BusinessHoursFactory,
     HolidayFactory,
@@ -42,6 +43,78 @@ class TestBusinessCalendar:
 
 
 class TestBusinessHours:
+    # 00:00 as an end means 24:00 (midnight at the end of the day).
+
+    @pytest.mark.parametrize(
+        ("start", "end"),
+        [
+            (datetime.time(22), datetime.time(0)),  # night shift until midnight
+            (datetime.time(0), datetime.time(0)),  # the whole day
+        ],
+    )
+    def test_slots_can_end_at_midnight(self, start, end):
+        slot = BusinessHoursFactory(start_time=start, end_time=end)
+
+        slot.full_clean()  # Model validation agrees with the database.
+
+    @pytest.mark.parametrize(
+        ("start", "end"),
+        [
+            (datetime.time(23), datetime.time(0)),  # inside 22:00-24:00
+            (datetime.time(21), datetime.time(23)),  # crosses into it
+            (datetime.time(0), datetime.time(0)),  # the whole day contains it
+        ],
+    )
+    def test_midnight_end_counts_as_the_latest_time(self, start, end):
+        existing = BusinessHoursFactory(start_time=datetime.time(22), end_time=datetime.time(0))
+
+        assert_violates(
+            "business_hours_no_overlap",
+            BusinessHoursFactory,
+            calendar=existing.calendar,
+            weekday=existing.weekday,
+            start_time=start,
+            end_time=end,
+        )
+
+    def test_early_morning_and_night_slots_do_not_overlap(self):
+        # 00:00 as a start is the beginning of the day; as an end, its end.
+        existing = BusinessHoursFactory(start_time=datetime.time(22), end_time=datetime.time(0))
+
+        BusinessHoursFactory(
+            calendar=existing.calendar,
+            weekday=existing.weekday,
+            start_time=datetime.time(0),
+            end_time=datetime.time(6),
+        )
+
+    def test_full_clean_validates_overlap_with_a_midnight_end(self):
+        # Validation in Python sends the values as parameters: the end expression
+        # repeats it, so its parameters must be repeated too.
+        existing = BusinessHoursFactory(start_time=datetime.time(22), end_time=datetime.time(0))
+        candidate = BusinessHours(
+            calendar=existing.calendar,
+            weekday=existing.weekday,
+            start_time=datetime.time(23),
+            end_time=datetime.time(0),
+        )
+
+        with pytest.raises(ValidationError, match="se solapa"):
+            candidate.full_clean()
+
+    def test_str_shows_midnight_as_24(self):
+        slot = BusinessHoursFactory(
+            weekday=Weekday.FRIDAY, start_time=datetime.time(22), end_time=datetime.time(0)
+        )
+
+        assert str(slot) == "Viernes 22:00-24:00"
+
+    def test_always_open_calendar(self):
+        calendar = AlwaysOpenCalendarFactory()
+
+        slots = calendar.business_hours.values_list("weekday", "start_time", "end_time")
+        assert sorted(slots) == [(day, datetime.time(0), datetime.time(0)) for day in range(7)]
+
     def test_allows_split_shift_on_the_same_day(self):
         calendar = BusinessCalendarFactory()
         BusinessHoursFactory(

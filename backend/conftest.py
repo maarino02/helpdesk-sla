@@ -1,8 +1,19 @@
 """Fixtures shared by the whole test suite."""
 
+import os
+
 import pytest
 from django.core.cache import cache
 from django.db import connection
+from hypothesis import settings
+
+# Property-based tests (hypothesis). No deadline: the time per example varies a lot
+# on CI machines, and these tests are about correctness, not speed. In CI, more
+# examples, and a failure prints the @reproduce_failure decorator that replays the
+# exact case locally. The CI workflow sets HYPOTHESIS_PROFILE=ci.
+settings.register_profile("dev", max_examples=100, deadline=None)
+settings.register_profile("ci", max_examples=500, deadline=None, print_blob=True)
+settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "dev"))
 
 
 @pytest.fixture(autouse=True)

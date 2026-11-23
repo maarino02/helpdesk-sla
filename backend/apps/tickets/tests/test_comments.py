@@ -1,7 +1,8 @@
 """add_comment(): the comment and its effects on the ticket.
 
 Tickets are created at NOW with a medium policy (first response 60, resolution
-480). Business time is provisionally wall-clock time, so values are exact.
+480). Organizations have a 24/7 calendar in the test data, so business time
+equals wall-clock time and values are exact.
 Concurrency (two agents replying at once): backend/tests/.
 """
 

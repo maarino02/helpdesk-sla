@@ -215,3 +215,27 @@ def test_agent_sees_calendar_without_editable_inlines(agent_client):
     assert response.status_code == 200
     assert 'name="_save"' not in content
     assert 'name="business_hours-0-start_time"' not in content
+
+
+def test_overlap_with_a_midnight_end_shows_24(admin_client):
+    response = admin_client.post(
+        reverse("admin:sla_businesscalendar_add"),
+        calendar_form(
+            slots=[(Weekday.SATURDAY, "20:00", "00:00"), (Weekday.SATURDAY, "23:00", "00:00")]
+        ),
+    )
+
+    assert response.status_code == 200
+    assert "Las franjas del sábado se solapan: 20:00-24:00 y 23:00-24:00." in (
+        response.content.decode()
+    )
+
+
+def test_admin_creates_a_24_7_calendar(admin_client):
+    response = admin_client.post(
+        reverse("admin:sla_businesscalendar_add"),
+        calendar_form(slots=[(day, "00:00", "00:00") for day in Weekday]),
+    )
+
+    assert response.status_code == 302
+    assert BusinessCalendar.objects.get(name="Madrid").business_hours.count() == 7
