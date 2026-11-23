@@ -56,8 +56,17 @@ Every transition records a `status_changed` event in `ticket_event`.
 - **Deadline calculation.** On creation, the policy duration is added in business
   minutes to the creation time, using the client's calendar. A ticket created outside
   business hours starts counting at the next working slot.
-- **Priority change.** The difference between the new and the old duration is applied,
-  in business minutes, to the current deadlines, so pauses already accumulated are kept.
+- **Priority change.** Staff can change the priority in `new`, `open` and `pending`. The
+  difference between the new policy's resolution duration and the ticket's
+  `resolution_target_minutes` (what was promised to this ticket, not the policy's current
+  value) is applied, in business minutes, to `resolution_due_at`, so pauses already
+  accumulated are kept. The first response deadline is computed again from `created_at`,
+  since that clock never pauses; once the first response has happened it is not touched.
+  A deadline that has already been breached never moves, as with calendar changes:
+  lowering the priority cannot erase a breach. For a paused ticket, "breached" is judged
+  at `sla_paused_at`, when its clock stopped. In `resolved` the priority is locked (409):
+  the resolution has been measured; reopen the ticket first. A closed ticket cannot be
+  changed at all.
 - **Calendar changes.** If a holiday is added or working hours change, the remaining
   business time of tickets with a running or paused clock is projected again with the new
   calendar. Expired deadlines are never modified. See ADR-0002.

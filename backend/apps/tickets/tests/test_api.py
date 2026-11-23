@@ -353,3 +353,92 @@ class TestTransitions:
             if q["sql"].startswith(('SELECT "app_user"', 'SELECT "category"'))
         ]
         assert lazy_loads == []
+
+
+class TestUpdate:
+    @pytest.fixture(autouse=True)
+    def _policies(self):
+        for priority in (Priority.MEDIUM, Priority.HIGH):
+            SlaPolicyFactory(priority=priority)
+
+    def test_staff_assign_and_change_priority(self, agent):
+        ticket = TicketFactory()
+
+        response = api_as(agent).patch(
+            detail_url(ticket), {"assignee": agent.pk, "priority": Priority.HIGH}, format="json"
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["assignee"] == {"id": agent.pk, "full_name": agent.full_name}
+        assert body["priority"] == Priority.HIGH
+        assert "description" in body  # The full ticket.
+
+    def test_null_unassigns(self, agent):
+        ticket = TicketFactory(assignee=agent)
+
+        response = api_as(agent).patch(detail_url(ticket), {"assignee": None}, format="json")
+
+        assert response.json()["assignee"] is None
+
+    def test_clients_cannot_patch(self, customer):
+        ticket = TicketFactory(organization=customer.organization)
+
+        response = api_as(customer).patch(
+            detail_url(ticket), {"priority": Priority.HIGH}, format="json"
+        )
+
+        assert response.status_code == 403
+
+    def test_status_is_rejected_with_a_hint(self, agent):
+        response = api_as(agent).patch(
+            detail_url(TicketFactory()), {"status": Status.CLOSED}, format="json"
+        )
+
+        assert response.status_code == 400
+        assert response.json() == {"status": ["Usa /transitions/ para cambiar el estado."]}
+
+    @pytest.mark.parametrize("field", ["title", "number", "resolution_due_at"])
+    def test_non_editable_fields_are_rejected_not_ignored(self, agent, field):
+        ticket = TicketFactory()
+
+        response = api_as(agent).patch(detail_url(ticket), {field: "x"}, format="json")
+
+        assert response.status_code == 400
+        assert response.json() == {field: ["Este campo no se puede modificar."]}
+
+    def test_client_cannot_be_the_assignee(self, agent, customer):
+        response = api_as(agent).patch(
+            detail_url(TicketFactory()), {"assignee": customer.pk}, format="json"
+        )
+
+        assert response.status_code == 400
+        assert "assignee" in response.json()
+
+    def test_closed_ticket_is_a_409(self, agent):
+        response = api_as(agent).patch(
+            detail_url(TicketFactory(closed=True)), {"assignee": agent.pk}, format="json"
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "ticket_closed"
+
+    def test_priority_of_a_resolved_ticket_is_a_409(self, agent):
+        response = api_as(agent).patch(
+            detail_url(TicketFactory(resolved=True)), {"priority": Priority.HIGH}, format="json"
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "priority_locked"
+
+    def test_put_is_not_allowed(self, agent):
+        response = api_as(agent).put(detail_url(TicketFactory()), {}, format="json")
+
+        assert response.status_code == 405
+
+    def test_missing_ticket(self, agent):
+        response = api_as(agent).patch(
+            reverse("tickets:detail", args=[999999]), {"priority": "high"}, format="json"
+        )
+
+        assert response.status_code == 404

@@ -6,7 +6,7 @@ from rest_framework.pagination import CursorPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.accounts.permissions import IsClient
+from apps.accounts.permissions import IsClient, IsStaff
 from apps.tickets.models import Category
 from apps.tickets.selectors import ticket_list, tickets_for
 from apps.tickets.serializers import (
@@ -15,10 +15,12 @@ from apps.tickets.serializers import (
     TicketFilterSerializer,
     TicketListSerializer,
     TicketSerializer,
+    TicketUpdateSerializer,
     TransitionSerializer,
 )
 from apps.tickets.services.creation import create_ticket
 from apps.tickets.services.state_machine import transition
+from apps.tickets.services.triage import update_ticket
 
 
 class TicketCursorPagination(CursorPagination):
@@ -59,15 +61,34 @@ class TicketListCreateView(generics.ListCreateAPIView):
         )
 
 
-class TicketDetailView(generics.RetrieveAPIView):
-    """One ticket. Another organization's ticket is a 404, not a 403: a 403
-    would confirm that the ticket exists.
+class TicketDetailView(generics.RetrieveUpdateAPIView):
+    """GET: one ticket. PATCH: staff change the assignee, priority or category.
+
+    Another organization's ticket is a 404, not a 403: a 403 would confirm that
+    the ticket exists. No PUT: replacing the whole ticket makes no sense when only
+    three fields are editable.
     """
 
     serializer_class = TicketSerializer
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_permissions(self):
+        if self.request.method == "PATCH":
+            return [IsAuthenticated(), IsStaff()]
+        return super().get_permissions()
 
     def get_queryset(self):
         return tickets_for(self.request.user)
+
+    def partial_update(self, request, *args, **kwargs):
+        ticket = self.get_object()
+        serializer = TicketUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        # Only the fields sent: an omitted field is not changed (UNSET in the
+        # service), while "assignee": null unassigns.
+        update_ticket(ticket, request.user, **serializer.validated_data)
+        updated = self.get_queryset().get(pk=ticket.pk)
+        return Response(TicketSerializer(updated).data)
 
 
 class TicketTransitionView(generics.GenericAPIView):
