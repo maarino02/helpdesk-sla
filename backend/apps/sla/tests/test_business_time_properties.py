@@ -22,6 +22,7 @@ from apps.sla.business_time import (
     add_business_minutes,
     business_minutes_between,
     reproject,
+    warning_instant,
 )
 
 ZONES = [
@@ -181,3 +182,15 @@ def test_reprojecting_to_the_same_calendar_keeps_the_deadline(calendar, anchor, 
     due = add_business_minutes(anchor, data.draw(st.integers(0, limit)), calendar)
 
     assert reproject(anchor, due, calendar, calendar) == due
+
+
+@given(schedules(), instants, st.data())
+def test_warning_leaves_a_fifth_of_the_budget(calendar, start, data):
+    limit = min(20000, 20 * _weekly_minutes(calendar))
+    budget = data.draw(st.integers(0, limit))
+    due = add_business_minutes(start, budget, calendar)
+
+    warning = warning_instant(due, budget, calendar)
+
+    assert warning <= due
+    assert business_minutes_between(warning, due, calendar) == budget * 20 // 100

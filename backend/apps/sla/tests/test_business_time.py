@@ -17,6 +17,7 @@ from apps.sla.business_time import (
     Slot,
     add_business_minutes,
     business_minutes_between,
+    warning_instant,
 )
 
 MADRID = ZoneInfo("Europe/Madrid")
@@ -214,3 +215,22 @@ def test_naive_datetimes_are_rejected():
 def test_schedule_is_immutable():
     with pytest.raises(AttributeError):
         OFFICE.holidays = frozenset()
+
+
+class TestWarningInstant:
+    """20 % of the budget before the deadline, counted backwards in business time."""
+
+    def test_within_the_same_day(self):
+        # 20 % of 960 is 192 minutes: Tuesday 17:00 - 3 h 12.
+        assert warning_instant(madrid(24, 17), 960, OFFICE) == madrid(24, 13, 48)
+
+    def test_back_across_the_night(self):
+        # 60 minutes on Tuesday morning, 132 on Monday afternoon.
+        assert warning_instant(madrid(24, 10), 960, OFFICE) == madrid(23, 15, 48)
+
+    def test_whole_minutes_rounded_down(self):
+        assert warning_instant(madrid(24, 17), 7, OFFICE) == madrid(24, 16, 59)
+        assert warning_instant(madrid(24, 17), 4, OFFICE) == madrid(24, 17)
+
+    def test_negative_budget_counts_as_zero(self):
+        assert warning_instant(madrid(24, 17), -100, OFFICE) == madrid(24, 17)

@@ -19,6 +19,7 @@ from apps.sla.business_time import add_business_minutes
 from apps.sla.models import Priority
 from apps.sla.services import load_schedule, resolve_policy
 from apps.tickets.models import EventType, Status, Ticket, TicketEvent
+from apps.tickets.services.deadlines import WARNING_FIELDS, refresh_warnings
 
 STAFF = frozenset({Role.AGENT, Role.ADMIN})
 
@@ -128,6 +129,7 @@ def update_ticket(
                 "resolution_target_minutes",
                 "resolution_due_at",
                 "first_response_due_at",
+                *WARNING_FIELDS,
             ]
 
         if changed:
@@ -186,6 +188,7 @@ def _move_deadlines(ticket: Ticket, priority: str, now: datetime) -> dict:
             kept.append("first_response")
 
     ticket.sla_policy = policy
+    refresh_warnings(ticket, schedule)
     after = {
         "resolution_due_at": ticket.resolution_due_at,
         "first_response_due_at": ticket.first_response_due_at,

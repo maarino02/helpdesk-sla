@@ -171,3 +171,22 @@ def reproject(anchor: datetime, due: datetime, old: Schedule, new: Schedule) -> 
     if business_minutes_between(anchor, due, new) == left:
         return due
     return add_business_minutes(anchor, left, new)
+
+
+# The warning alert fires when this share of a deadline's business time is left
+# (80 % consumed).
+WARNING_REMAINING_PERCENT = 20
+
+
+def warning_instant(due: datetime, budget_minutes: int, calendar: Schedule) -> datetime:
+    """The instant at which only 20 % of `budget_minutes` is left before `due`.
+
+    Counted backwards from the deadline in business time, so pauses and calendar
+    changes already in the deadline are respected. Whole minutes, rounded down:
+    with a 7-minute budget the warning comes 1 minute before the deadline. A
+    negative budget (a deadline before its start, which the services never
+    produce) counts as zero: going back a negative amount would put the warning
+    after the deadline.
+    """
+    left = max(budget_minutes, 0) * WARNING_REMAINING_PERCENT // 100
+    return add_business_minutes(due, -left, calendar)

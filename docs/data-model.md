@@ -86,6 +86,8 @@ erDiagram
         bigint sla_policy_id FK
         timestamptz first_response_due_at
         timestamptz resolution_due_at
+        timestamptz first_response_warning_at "80 % consumed"
+        timestamptz resolution_warning_at "80 % consumed"
         timestamptz sla_paused_at "set while pending or resolved"
         int resolution_target_minutes "copied from the policy"
         timestamptz first_response_at
@@ -168,6 +170,7 @@ writing outside Django. They are not repeated in the table below.
 | `ticket` | `CHECK ((status = 'closed') = (closed_at IS NOT NULL))`, `CHECK ((status IN ('resolved', 'closed')) = (resolved_at IS NOT NULL))` | Timestamps match the status in both directions: no missing timestamps and no leftover ones (reopening clears `resolved_at`). |
 | `ticket` | `CHECK ((first_response_at IS NULL) = (first_response_business_minutes IS NULL))`, same idea for `resolved_at` and `resolution_business_minutes` | A business duration exists only when its timestamp does. |
 | `ticket` | `CHECK ((status IN ('pending', 'resolved')) = (sla_paused_at IS NOT NULL))` | The resolution clock is paused exactly in `pending` and `resolved`. In `closed` it is stopped for good, so there is no pause to resume. |
+| `ticket` | `CHECK (first_response_warning_at <= first_response_due_at)`, same for the resolution | The instants at which 80 % of each deadline's business time is consumed, used by the SLA alerts job. Derived data, rewritten with the deadlines by the ticket services; a warning can never come after its deadline. |
 | `ticket` | `CHECK (resolution_target_minutes > 0)` | The business minutes the resolution may take, copied from the policy on creation (and adjusted on priority changes). A copy, like the price on an order line: editing a policy does not change what open tickets were promised, and it keeps `resolution_business_minutes = target - minutes left until resolution_due_at` exact. |
 | `ticket` | `CHECK (first_response_business_minutes >= 0 AND resolution_business_minutes >= 0)` | No negative durations. `NULL` passes: a `CHECK` only rejects a condition that is false, not unknown. |
 | `ticket_comment`, `ticket_event`, `sla_alert` | `FOREIGN KEY (ticket_id, organization_id) REFERENCES ticket (id, organization_id)` | The denormalized `organization_id` can never contradict the ticket's. Created with `RunSQL`, since Django does not support composite foreign keys. They replace the simple foreign keys to `ticket` and `organization` (`db_constraint=False` in Django). Not deferrable, so the offending `INSERT` fails at once; `ON UPDATE` / `ON DELETE NO ACTION`, so a ticket can be neither moved to another organization nor deleted. |
@@ -200,6 +203,7 @@ which also starts with `calendar_id`.
 | `ticket (assignee_id, status)` | Agent work queue and workload statistics. |
 | `ticket (resolution_due_at) WHERE status IN ('new', 'open')` | Partial index for the background job that looks for tickets about to breach. |
 | `ticket (first_response_due_at) WHERE first_response_at IS NULL` | Same, for the first-response SLA. |
+| `ticket (resolution_warning_at) WHERE status IN ('new', 'open')` and `ticket (first_response_warning_at) WHERE first_response_at IS NULL` | The same partial conditions, for the warning alerts. |
 | `ticket (created_at)` | Monthly aggregations in the dashboard. |
 | `ticket_comment (ticket_id, created_at)` | Ordered comment thread. |
 | `ticket_event (ticket_id, created_at)` | Ticket history. |

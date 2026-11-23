@@ -74,6 +74,16 @@ class TicketFactory(factory.django.DjangoModelFactory):
     resolution_due_at = factory.LazyAttribute(
         lambda o: minutes_after_now(o.sla_policy.resolution_minutes)
     )
+    # 20 % of each budget before its deadline, in real time like the deadlines.
+    first_response_warning_at = factory.LazyAttribute(
+        lambda o: (
+            o.first_response_due_at
+            - datetime.timedelta(minutes=o.sla_policy.first_response_minutes // 5)
+        )
+    )
+    resolution_warning_at = factory.LazyAttribute(
+        lambda o: o.resolution_due_at - datetime.timedelta(minutes=o.resolution_target_minutes // 5)
+    )
 
     class Params:
         resolved = factory.Trait(
