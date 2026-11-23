@@ -7,6 +7,8 @@ venv/
 
 # Tests and tooling
 .pytest_cache/
+# Examples that failed in property-based tests, replayed first next time
+.hypothesis/
 .ruff_cache/
 .mypy_cache/
 .coverage
