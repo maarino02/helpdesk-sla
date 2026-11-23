@@ -16,6 +16,8 @@ from apps.accounts.tests.factories import (
     ClientUserFactory,
 )
 from apps.core.rls import system_context
+from apps.organizations.models import Organization
+from apps.sla.models import BusinessCalendar
 
 pytestmark = pytest.mark.usefixtures("production_like")
 
@@ -80,3 +82,52 @@ def test_only_active_staff_can_log_in(client, factory):
 
     assert response.status_code == 200  # The form again, with an error.
     assert "_auth_user_id" not in client.session
+
+
+def test_admin_creates_calendar_and_organization(client):
+    # Catalog writes and organization inserts are only allowed with
+    # app.role = 'admin': this checks the context the middleware sets, with
+    # real commits, not the system context of the test transaction.
+    with system_context():
+        admin = AdminUserFactory(is_staff=True, is_superuser=True)
+    log_in(client, admin)
+
+    calendar_response = client.post(
+        reverse("admin:sla_businesscalendar_add"),
+        {
+            "name": "Madrid",
+            "timezone": "Europe/Madrid",
+            "business_hours-TOTAL_FORMS": 1,
+            "business_hours-INITIAL_FORMS": 0,
+            "business_hours-0-weekday": 0,
+            "business_hours-0-start_time": "09:00",
+            "business_hours-0-end_time": "18:00",
+            "holidays-TOTAL_FORMS": 1,
+            "holidays-INITIAL_FORMS": 0,
+            "holidays-0-date": "2026-12-25",
+            "holidays-0-name": "Navidad",
+        },
+    )
+    with system_context():
+        calendar = BusinessCalendar.objects.get(name="Madrid")
+    organization_response = client.post(
+        reverse("admin:organizations_organization_add"),
+        {"name": "Acme", "slug": "acme", "business_calendar": calendar.pk},
+    )
+
+    assert calendar_response.status_code == 302
+    assert organization_response.status_code == 302
+    with system_context():
+        assert calendar.business_hours.count() == 1
+        assert calendar.holidays.count() == 1
+        assert Organization.objects.get(slug="acme").next_ticket_number == 1
+
+
+def test_agent_cannot_open_catalog_forms(client):
+    with system_context():
+        agent = AgentUserFactory(is_staff=True, is_superuser=True)
+    log_in(client, agent)
+
+    response = client.get(reverse("admin:sla_businesscalendar_add"))
+
+    assert response.status_code == 403
