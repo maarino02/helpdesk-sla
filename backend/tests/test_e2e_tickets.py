@@ -4,11 +4,18 @@ Unlike apps/tickets/tests/test_api.py, every request here goes through
 RlsJWTAuthentication, which sets the context of each request transaction.
 """
 
+from datetime import timedelta
+from zoneinfo import ZoneInfo
+
 import pytest
+from django.test import Client
+from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from apps.accounts.tests.factories import AdminUserFactory, AgentUserFactory, ClientUserFactory
 from apps.core.rls import system_context
+from apps.organizations.models import Organization
 from apps.sla.models import Priority
 from apps.sla.tests.factories import SlaPolicyFactory
 from apps.tickets.models import Ticket, TicketEvent
@@ -207,3 +214,43 @@ def test_a_ticket_from_creation_to_close(data):
         ("status_changed", "Resuelto"),
         ("status_changed", "Cerrado"),
     ]
+
+
+def test_a_holiday_added_in_the_admin_moves_a_client_deadline(data):
+    customer_api = logged_in(data["customer"])
+    ticket_url = open_ticket(customer_api, data["category"], "Antes del festivo")["Location"]
+    before = customer_api.get(ticket_url).json()["resolution_due_at"]
+    with system_context():
+        admin = AdminUserFactory(is_staff=True, is_superuser=True)
+        calendar = Organization.objects.get(pk=data["customer"].organization_id).business_calendar
+        slots = list(calendar.business_hours.values_list("id", "weekday"))
+    tomorrow = timezone.now().astimezone(ZoneInfo(calendar.timezone)).date() + timedelta(days=1)
+    browser = Client()
+    browser.post(reverse("admin:login"), {"username": admin.email, "password": PASSWORD})
+    form = {
+        "name": calendar.name,
+        "timezone": calendar.timezone,
+        "business_hours-TOTAL_FORMS": len(slots),
+        "business_hours-INITIAL_FORMS": len(slots),
+        "holidays-TOTAL_FORMS": 1,
+        "holidays-INITIAL_FORMS": 0,
+        "holidays-0-date": tomorrow.isoformat(),
+        "holidays-0-name": "Fiesta local",
+    }
+    for i, (pk, weekday) in enumerate(slots):  # The 24/7 slots, unchanged.
+        form |= {
+            f"business_hours-{i}-id": pk,
+            f"business_hours-{i}-weekday": weekday,
+            f"business_hours-{i}-start_time": "00:00",
+            f"business_hours-{i}-end_time": "00:00",
+        }
+
+    saved = browser.post(reverse("admin:sla_businesscalendar_change", args=[calendar.pk]), form)
+    after = customer_api.get(ticket_url).json()["resolution_due_at"]
+    history = customer_api.get(f"{ticket_url}events/").json()["results"]
+
+    assert saved.status_code == 302
+    # ISO 8601 strings in UTC compare in time order.
+    assert after > before
+    assert history[-1]["event_type"] == "sla_recalculated"
+    assert history[-1]["actor"] is None
