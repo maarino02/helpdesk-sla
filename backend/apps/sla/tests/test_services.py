@@ -113,7 +113,10 @@ def test_compute_due_dates():
 
 
 def test_load_organization_schedule(django_assert_num_queries):
-    organization = OrganizationFactory(business_calendar__timezone="Atlantic/Canary")
+    # A calendar without slots: the organizations' default one is 24/7.
+    organization = OrganizationFactory(
+        business_calendar=BusinessCalendarFactory(timezone="Atlantic/Canary")
+    )
     BusinessHoursFactory(calendar=organization.business_calendar, weekday=Weekday.TUESDAY)
 
     with django_assert_num_queries(3):  # Calendar, slots, holidays.

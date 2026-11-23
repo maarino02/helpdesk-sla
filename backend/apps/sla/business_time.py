@@ -12,7 +12,10 @@ from zoneinfo import ZoneInfo
 
 
 class Slot(NamedTuple):
-    """A working time slot in local time, half-open: [start, end)."""
+    """A working time slot in local time, half-open: [start, end).
+
+    An end of 00:00 means midnight at the end of the day (24:00).
+    """
 
     start: time
     end: time

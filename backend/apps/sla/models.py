@@ -1,3 +1,4 @@
+from datetime import time
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.contrib.postgres.constraints import ExclusionConstraint
@@ -47,6 +48,32 @@ class OnFixedDate(Func):
     output_field = models.DateTimeField()
 
 
+class EndOnFixedDate(Func):
+    """OnFixedDate for the end of a slot, where 00:00 means midnight at the end of
+    the day (24:00): it goes on the next date, so 22:00-00:00 is a two-hour range.
+
+    The expression appears twice in the SQL, so its parameters must appear twice
+    too. In the index it is a plain column with no parameters, but model
+    validation (full_clean) replaces the column with the value being checked, as
+    a parameter: a template repeating %(expressions)s would then have one
+    placeholder more than parameters.
+    """
+
+    output_field = models.DateTimeField()
+
+    def as_sql(self, compiler, connection, **extra_context):
+        sql, params = compiler.compile(self.source_expressions[0])
+        return (
+            f"(DATE '2000-01-01' + {sql}"
+            f" + CASE WHEN {sql} = TIME '00:00' THEN INTERVAL '1 day' ELSE INTERVAL '0' END)",
+            (*params, *params),
+        )
+
+
+# As an end time, 00:00 means midnight at the end of the day (24:00).
+END_OF_DAY = time(0)
+
+
 class TsRange(Func):
     """PostgreSQL tsrange(start, end): half-open [start, end) by default."""
 
@@ -88,10 +115,13 @@ class BusinessHours(models.Model):
                 condition=Q(weekday__gte=0, weekday__lte=6),
                 name="business_hours_weekday_range",
             ),
-            # Strictly less: a slot cannot be empty or cross midnight. A night shift
-            # is stored as two slots, one on each day.
+            # Strictly less: a slot cannot be empty or cross midnight. The exception
+            # is an end of 00:00, which means 24:00: 22:00-00:00 is a night shift
+            # until midnight and 00:00-00:00 a whole day (seven of them, a 24/7
+            # calendar). A shift that crosses midnight is stored as two slots, one
+            # on each day.
             models.CheckConstraint(
-                condition=Q(start_time__lt=F("end_time")),
+                condition=Q(start_time__lt=F("end_time")) | Q(end_time=END_OF_DAY),
                 name="business_hours_start_before_end",
             ),
             # Two slots of the same calendar and weekday cannot overlap, or business
@@ -106,7 +136,7 @@ class BusinessHours(models.Model):
                     ("calendar", RangeOperators.EQUAL),
                     ("weekday", RangeOperators.EQUAL),
                     (
-                        TsRange(OnFixedDate("start_time"), OnFixedDate("end_time")),
+                        TsRange(OnFixedDate("start_time"), EndOnFixedDate("end_time")),
                         RangeOperators.OVERLAPS,
                     ),
                 ],
@@ -117,7 +147,8 @@ class BusinessHours(models.Model):
         ]
 
     def __str__(self) -> str:
-        return f"{self.get_weekday_display()} {self.start_time:%H:%M}-{self.end_time:%H:%M}"
+        end = "24:00" if self.end_time == END_OF_DAY else f"{self.end_time:%H:%M}"
+        return f"{self.get_weekday_display()} {self.start_time:%H:%M}-{end}"
 
 
 class Holiday(models.Model):
