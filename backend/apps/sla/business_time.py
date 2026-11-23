@@ -138,7 +138,12 @@ def _working_intervals(calendar: Schedule, day: date) -> list[tuple[datetime, da
         begin = datetime.combine(day, slot.start, tzinfo=calendar.timezone)
         end_day = day + timedelta(days=1) if slot.end == END_OF_DAY else day
         end = datetime.combine(end_day, slot.end, tzinfo=calendar.timezone)
-        intervals.append((begin.astimezone(UTC), end.astimezone(UTC)))
+        begin, end = begin.astimezone(UTC), end.astimezone(UTC)
+        # A slot entirely inside the hour skipped in spring does not exist that day:
+        # 02:01-03:00 in New York becomes 03:01-03:00, an inverted interval. Kept,
+        # its negative length would add time instead of consuming it.
+        if begin < end:
+            intervals.append((begin, end))
     return intervals
 
 
