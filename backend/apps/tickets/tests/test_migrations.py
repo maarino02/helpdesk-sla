@@ -22,11 +22,19 @@ UPDATED = datetime(2026, 11, 3, 12, 0, tzinfo=UTC)
 RESOLVED = datetime(2026, 11, 4, 16, 0, tzinfo=UTC)
 
 
-def migrate(target):
+def migrate(*targets):
     executor = MigrationExecutor(connection)
     executor.loader.build_graph()
-    executor.migrate([target])
-    return executor.loader.project_state(target).apps
+    executor.migrate(list(targets))
+    return executor.loader.project_state(list(targets)).apps
+
+
+def migrate_to_latest():
+    # Every app's last migration, not a fixed name: a fixed one would leave the
+    # schema behind as soon as a newer migration exists, and the transactional
+    # tests that run afterwards would see an old schema.
+    executor = MigrationExecutor(connection)
+    migrate(*executor.loader.graph.leaf_nodes())
 
 
 def system_context():
@@ -81,7 +89,7 @@ def old_tickets():
         # auto_now would overwrite updated_at on save; an UPDATE sets a known value.
         Ticket.objects.update(updated_at=UPDATED)
     yield tickets
-    migrate(AFTER)
+    migrate_to_latest()
 
 
 def test_fills_the_target_and_the_pause_start(old_tickets):
