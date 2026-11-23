@@ -10,7 +10,7 @@ from rest_framework import serializers
 from apps.accounts.models import Role, User
 from apps.organizations.models import Organization
 from apps.sla.models import Priority
-from apps.tickets.models import Category, Status, Ticket
+from apps.tickets.models import Category, EventType, Status, Ticket, TicketComment, TicketEvent
 from apps.tickets.selectors import ASSIGNEE_ME, ASSIGNEE_NONE
 
 
@@ -151,3 +151,99 @@ class TicketUpdateSerializer(serializers.Serializer):
                 }
             )
         return attrs
+
+
+class CommentAuthorSerializer(serializers.ModelSerializer):
+    """The role lets the interface tell the support team from the client."""
+
+    class Meta:
+        model = User
+        fields = ["id", "full_name", "role"]
+        read_only_fields = fields
+
+
+class CommentSerializer(serializers.ModelSerializer):
+    author = CommentAuthorSerializer(read_only=True)
+
+    class Meta:
+        model = TicketComment
+        fields = ["id", "author", "body", "is_internal", "created_at"]
+        read_only_fields = fields
+
+
+class CommentCreateSerializer(serializers.Serializer):
+    # CharField trims and rejects blank values: "   " is a 400 with a field error.
+    body = serializers.CharField()
+    is_internal = serializers.BooleanField(default=False)
+
+
+class EventDisplay:
+    """Readable values for the events of one page, resolved in bulk.
+
+    Events store ids and codes ("7" -> "12", "pending"). A client cannot turn an
+    agent id into a name, so the API does it: one query for the users and one for
+    the categories of the whole page, instead of one per event.
+    """
+
+    def __init__(self, events):
+        user_ids, category_ids = set(), set()
+        for event in events:
+            # Only these two event types store ids; the others store codes.
+            target = {
+                EventType.ASSIGNEE_CHANGED: user_ids,
+                EventType.CATEGORY_CHANGED: category_ids,
+            }.get(event.event_type)
+            if target is not None:
+                target |= {int(v) for v in (event.from_value, event.to_value) if v is not None}
+        self.users = (
+            dict(User.objects.filter(pk__in=user_ids).values_list("id", "full_name"))
+            if user_ids
+            else {}
+        )
+        self.categories = (
+            dict(Category.objects.filter(pk__in=category_ids).values_list("id", "name"))
+            if category_ids
+            else {}
+        )
+
+    def __call__(self, event, value):
+        if value is None:
+            return None
+        if event.event_type == EventType.STATUS_CHANGED:
+            return Status(value).label
+        if event.event_type == EventType.PRIORITY_CHANGED:
+            return Priority(value).label
+        if event.event_type == EventType.ASSIGNEE_CHANGED:
+            return self.users.get(int(value))
+        if event.event_type == EventType.CATEGORY_CHANGED:
+            return self.categories.get(int(value))
+        return value
+
+
+class EventSerializer(serializers.ModelSerializer):
+    """One history entry. Needs an EventDisplay as context["display"]."""
+
+    actor = UserSummarySerializer(read_only=True, allow_null=True)
+    from_display = serializers.SerializerMethodField()
+    to_display = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TicketEvent
+        fields = [
+            "id",
+            "event_type",
+            "actor",
+            "from_value",
+            "to_value",
+            "from_display",
+            "to_display",
+            "metadata",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_from_display(self, event):
+        return self.context["display"](event, event.from_value)
+
+    def get_to_display(self, event):
+        return self.context["display"](event, event.to_value)

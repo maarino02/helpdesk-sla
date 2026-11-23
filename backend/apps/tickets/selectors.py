@@ -3,11 +3,14 @@
 from django.db.models import QuerySet
 
 from apps.accounts.models import Role
-from apps.tickets.models import Ticket
+from apps.tickets.models import Ticket, TicketComment, TicketEvent
 
 # "me" and "none" are the special values of the assignee filter.
 ASSIGNEE_ME = "me"
 ASSIGNEE_NONE = "none"
+
+
+STAFF = (Role.AGENT, Role.ADMIN)
 
 
 def tickets_for(user) -> QuerySet[Ticket]:
@@ -20,7 +23,7 @@ def tickets_for(user) -> QuerySet[Ticket]:
     tickets = Ticket.objects.select_related("organization", "category", "requester", "assignee")
     if user.role == Role.CLIENT:
         return tickets.filter(organization_id=user.organization_id)
-    if user.role in (Role.AGENT, Role.ADMIN):
+    if user.role in STAFF:
         return tickets
     # Fail closed for any other role.
     return tickets.none()
@@ -40,3 +43,29 @@ def ticket_list(user, *, status=None, priority=None, assignee=None) -> QuerySet[
     elif assignee is not None:
         tickets = tickets.filter(assignee_id=assignee)
     return tickets
+
+
+def comments_for(user, ticket: Ticket) -> QuerySet[TicketComment]:
+    """The comments of a ticket the user may read, with their authors.
+
+    The ticket must come from tickets_for(user). Clients never see internal
+    notes: the restrictive row-level security policy already hides them, and
+    this filter is defense in depth.
+    """
+    comments = TicketComment.objects.filter(ticket=ticket).select_related("author")
+    if user.role == Role.CLIENT:
+        return comments.filter(is_internal=False)
+    if user.role in STAFF:
+        return comments
+    return comments.none()
+
+
+def events_for(user, ticket: Ticket) -> QuerySet[TicketEvent]:
+    """The history of a ticket, with the actors. Clients see it too: it holds
+    nothing the ticket itself does not show. The ticket must come from
+    tickets_for(user).
+    """
+    events = TicketEvent.objects.filter(ticket=ticket).select_related("actor")
+    if user.role == Role.CLIENT or user.role in STAFF:
+        return events
+    return events.none()

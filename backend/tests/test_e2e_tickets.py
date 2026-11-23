@@ -164,3 +164,46 @@ def test_admin_triages_a_ticket(data):
     with system_context():
         types = set(TicketEvent.objects.values_list("event_type", flat=True))
     assert types == {"created", "assignee_changed", "priority_changed", "category_changed"}
+
+
+def test_a_ticket_from_creation_to_close(data):
+    """The whole life of a ticket as the two people involved see it."""
+    customer_api = logged_in(data["customer"])
+    agent_api = logged_in(data["agent"])
+    ticket_url = open_ticket(customer_api, data["category"], "Sin correo")["Location"]
+    comments_url = f"{ticket_url}comments/"
+    transitions_url = f"{ticket_url}transitions/"
+
+    agent_api.post(comments_url, {"body": "Mirar el buzón.", "is_internal": True})
+    agent_api.post(comments_url, {"body": "¿Qué error le sale?"})
+    after_reply = customer_api.get(ticket_url).json()
+    agent_api.post(transitions_url, {"to_status": "pending"})
+    customer_api.post(comments_url, {"body": "Dice que el buzón está lleno."})
+    after_answer = customer_api.get(ticket_url).json()
+    agent_api.post(transitions_url, {"to_status": "resolved"})
+    customer_api.post(transitions_url, {"to_status": "closed"})
+    late = customer_api.post(comments_url, {"body": "Una cosa más..."})
+
+    # The public reply was the first response and took the ticket.
+    assert after_reply["status"] == "open"
+    assert after_reply["first_response_at"] is not None
+    assert after_reply["assignee"]["id"] == data["agent"].pk
+    # The client's answer resumed the pending ticket.
+    assert after_answer["status"] == "open"
+    assert late.status_code == 409
+
+    as_customer = [c["body"] for c in customer_api.get(comments_url).json()["results"]]
+    as_agent = [c["body"] for c in agent_api.get(comments_url).json()["results"]]
+    assert as_customer == ["¿Qué error le sale?", "Dice que el buzón está lleno."]
+    assert as_agent == ["Mirar el buzón.", *as_customer]
+
+    history = customer_api.get(f"{ticket_url}events/").json()["results"]
+    assert [(e["event_type"], e["to_display"]) for e in history] == [
+        ("created", None),
+        ("assignee_changed", data["agent"].full_name),
+        ("status_changed", "Abierto"),
+        ("status_changed", "En espera del cliente"),
+        ("status_changed", "Abierto"),
+        ("status_changed", "Resuelto"),
+        ("status_changed", "Cerrado"),
+    ]
