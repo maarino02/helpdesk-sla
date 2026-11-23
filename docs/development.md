@@ -133,14 +133,8 @@ ROLLBACK;
 
 ## Using the API
 
-| Endpoint | Purpose |
-|---|---|
-| `POST /api/auth/token/` | `email` and `password` → `access` (15 min) and `refresh` (1 day). Throttled to 10 attempts per minute per client address. |
-| `POST /api/auth/token/refresh/` | `refresh` → new `access`, only while the user is still active. No rotation. |
-| `GET /api/me/` | The authenticated user, with role and organization as they are now. |
-
-Send the access token as `Authorization: Bearer <token>`. Every endpoint requires
-authentication unless it says otherwise.
+The endpoints, permissions, pagination and error format are in the
+[API reference](api.md). A quick check from the command line:
 
 ```sh
 curl -s -X POST http://127.0.0.1:8000/api/auth/token/ \
@@ -148,8 +142,8 @@ curl -s -X POST http://127.0.0.1:8000/api/auth/token/ \
 curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 ```
 
-The token carries only the user id. Changing a user's role or deactivating them takes
-effect on their next request, with the same token.
+In development (`DEBUG`), opening an endpoint in the browser shows Django REST
+Framework's browsable API; it needs a token like any other client.
 
 ## Tests
 
@@ -182,7 +176,7 @@ Tests against the catalog keep the database honest:
 | `test_privileges.py` | Table privileges of `helpdesk_app` match a matrix. |
 | `test_rls_schema.py` | Every table is classified with or without RLS; `ENABLE`, `FORCE`, policies, column guards, views. |
 | `test_isolation.py` | What each context sees in each table, on a two-organization dataset. |
-| `test_api_views.py` | Every DRF view uses the RLS authentication class. |
+| `test_api_views.py` | Every DRF view uses the RLS authentication class, and every API route is documented in `docs/api.md`. |
 
 ## Checklist for a new table
 

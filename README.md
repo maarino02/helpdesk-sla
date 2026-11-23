@@ -5,7 +5,7 @@
 Multi-tenant helpdesk with SLA tracking in business hours, built with Django,
 PostgreSQL Row-Level Security and Celery.
 
-> **Status:** in development. Phase 3 (auth & isolation) is complete; phase 4 (tickets API) is next. See the [roadmap](#roadmap).
+> **Status:** in development. Phase 4 (tickets API) is complete; phase 5 (SLA engine) is next. See the [roadmap](#roadmap).
 
 ## Overview
 
@@ -48,7 +48,7 @@ A background process watches those deadlines and raises alerts before they are b
 - [x] **Phase 1 - Skeleton:** Django project, Docker Compose, tests and CI
 - [x] **Phase 2 - Data model:** models, constraints, indexes and migrations
 - [x] **Phase 3 - Auth & isolation:** JWT, roles and Row-Level Security policies
-- [ ] **Phase 4 - Tickets API:** CRUD, state transitions, comments and event history
+- [x] **Phase 4 - Tickets API:** CRUD, state transitions, comments and event history
 - [ ] **Phase 5 - SLA engine:** business-time calculation, holidays and pauses
 - [ ] **Phase 6 - Background jobs:** SLA alerts and auto-close with Celery
 - [ ] **Phase 7 - Demo data:** realistic seed data and demo accounts
@@ -132,18 +132,18 @@ two beat schedulers would send every periodic task twice.
 | `make ps` / `make logs` | Show container status / follow container logs            |
 | `make down`             | Stop and remove all containers                           |
 
-### Authentication
+### API
 
-The API uses JSON Web Tokens: `POST /api/auth/token/` with email and password,
-`POST /api/auth/token/refresh/`, and `GET /api/me/`. The token carries only the user
-id; role and organization are read from the database on every request, so a change of
-role or a deactivation applies at once. See [ADR-0004](docs/adr/0004-rls-request-context.md)
-and the [API section](docs/development.md#using-the-api) of the development guide.
+A JSON API with JWT authentication: tickets, state transitions, triage, comments and
+history. Clients see only their organization's tickets, and every status change goes
+through the state machine. Endpoints, permissions by role, pagination and error codes are
+in the [API reference](docs/api.md).
 
 ## Documentation
 
 - [Development guide](docs/development.md): configuration, database roles, working
   with Row-Level Security, tests, checklist for new tables, troubleshooting
+- [API reference](docs/api.md): endpoints, permissions by role, pagination and errors
 - [Data model](docs/data-model.md): ER diagram, constraints, indexes and RLS policies
 - [Ticket state machine](docs/state-machine.md): states, transitions and permissions
 - Architecture decision records:
