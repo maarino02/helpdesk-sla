@@ -182,6 +182,33 @@ Tests against the catalog keep the database honest:
 | `test_isolation.py` | What each context sees in each table, on a two-organization dataset. |
 | `test_api_views.py` | Every DRF view uses the RLS authentication class, and every API route is documented in `docs/api.md`. |
 
+**Concurrency tests** (`backend/tests/test_*concurrency.py`, `test_ticket_numbering.py`,
+`test_recalculation_locking.py`) run two or more real connections in threads, with
+`production_like`. To prove that an operation takes a lock, another connection holds a
+conflicting one and the operation runs with `SET LOCAL lock_timeout`; to force an order,
+the test waits until `pg_locks` shows a lock request not yet granted (`pg_stat_activity`
+hides other sessions from `helpdesk_app`). Choose the lock the other connection holds
+with care: holding `FOR UPDATE` on a row also blocks a plain `UPDATE` of it, so the test
+would pass without the explicit lock; `FOR KEY SHARE` conflicts only with `FOR UPDATE`.
+Check every such test by removing the lock and watching it fail.
+
+**Property-based tests** (`backend/apps/sla/tests/test_business_time_properties.py`) use
+hypothesis: it generates calendars, instants and durations and checks properties that
+must always hold (adding and measuring are inverse, measuring is additive, and so on).
+
+- Profiles are registered in `backend/conftest.py`: `dev` (100 examples, the default) and
+  `ci` (500, selected in CI with `HYPOTHESIS_PROFILE=ci`). Neither has a deadline per
+  example. Run the CI profile locally with `HYPOTHESIS_PROFILE=ci make test`
+  (PowerShell: `$env:HYPOTHESIS_PROFILE="ci"; make test`).
+- When a property fails, hypothesis shrinks the input to a minimal case, and in CI it
+  prints a `@reproduce_failure(...)` decorator that replays it exactly. Fix the code, then
+  pin the case: a hand-written test with the expected value, and an `@example` on the
+  property. The minimal case is otherwise only in `.hypothesis/`, a local folder that is
+  not committed.
+- Properties check that the functions agree with each other, not that the results are
+  right: ignoring holidays everywhere would still pass them. The hand-written cases in
+  `test_business_time.py` and `test_business_time_dst.py` check the values.
+
 ## Checklist for a new table
 
 The catalog tests fail until each step is done, on purpose: every table needs an
