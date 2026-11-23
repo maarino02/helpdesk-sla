@@ -1,4 +1,4 @@
-"""Mixins shared by the ModelAdmin classes of several apps."""
+"""Mixins and helpers shared by the ModelAdmin classes of several apps."""
 
 from apps.accounts.models import Role
 
@@ -27,3 +27,10 @@ class AdminRoleRequiredMixin:
 
     def has_delete_permission(self, request, obj=None):
         return self._has_admin_role(request) and super().has_delete_permission(request, obj)
+
+
+def report_recalculated_deadlines(model_admin, request, moved: int) -> None:
+    """Tell the admin how many tickets got new deadlines after a calendar change."""
+    if moved:
+        noun = "incidencia" if moved == 1 else "incidencias"
+        model_admin.message_user(request, f"Plazos de SLA recalculados en {moved} {noun}.")

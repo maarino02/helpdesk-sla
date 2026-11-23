@@ -152,3 +152,22 @@ def _require_aware(value: datetime) -> None:
     # calendar's zone would silently give wrong results.
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"Expected an aware datetime, got {value!r}.")
+
+
+def reproject(anchor: datetime, due: datetime, old: Schedule, new: Schedule) -> datetime:
+    """Move a deadline to a new calendar, keeping the business time left.
+
+    The business minutes from `anchor` to `due` with the old calendar are placed
+    again from `anchor` with the new one: time already consumed stays as it was,
+    only what was left is projected (ADR-0002).
+
+    If both calendars give the same business time until the deadline (a holiday in
+    the past, a change on a weekday after it), the deadline stays exactly where it
+    is. Without this check it would still move by up to a minute, because the
+    measure truncates the seconds of `anchor`, and every open ticket would get a
+    recalculation for nothing.
+    """
+    left = business_minutes_between(anchor, due, old)
+    if business_minutes_between(anchor, due, new) == left:
+        return due
+    return add_business_minutes(anchor, left, new)

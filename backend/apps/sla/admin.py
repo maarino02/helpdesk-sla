@@ -4,9 +4,14 @@ from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.forms.models import BaseInlineFormSet
 
-from apps.core.admin_mixins import AdminRoleRequiredMixin
+from apps.core.admin_mixins import AdminRoleRequiredMixin, report_recalculated_deadlines
+from apps.tickets.services.sla_recalculation import (
+    recalculate_deadlines,
+    tickets_using_calendar,
+)
 
 from .models import END_OF_DAY, BusinessCalendar, BusinessHours, Holiday, SlaPolicy, Weekday
+from .services import load_calendar_schedule, lock_and_snapshot
 
 
 class BusinessHoursFormSet(BaseInlineFormSet):
@@ -80,8 +85,11 @@ class HolidayInline(AdminRoleRequiredMixin, admin.TabularInline):
 class BusinessCalendarAdmin(AdminRoleRequiredMixin, admin.ModelAdmin):
     """Calendar with its slots and holidays on one page.
 
-    Changes do not yet move the deadlines of open tickets: that recalculation
-    arrives with the SLA engine.
+    Saving a change reprojects the deadlines of the open tickets of every
+    organization that uses the calendar, in the same transaction (ADR-0005). The
+    admin saves the calendar first (save_model) and its slots and holidays after
+    (save_related), so the schedule before the change is taken in the first step
+    and the recalculation runs at the end of the second.
     """
 
     list_display = ("name", "timezone")
@@ -89,6 +97,28 @@ class BusinessCalendarAdmin(AdminRoleRequiredMixin, admin.ModelAdmin):
     # The model has no default ordering; without one the paginator warns.
     ordering = ("name",)
     inlines = (BusinessHoursInline, HolidayInline)
+
+    def save_model(self, request, obj, form, change):
+        if change:
+            # Before saving: a time zone change also moves deadlines. Kept on the
+            # object, never on self: there is one ModelAdmin instance for the whole
+            # process, shared by every request and thread.
+            obj._schedule_before = lock_and_snapshot(obj.pk)
+        super().save_model(request, obj, form, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        calendar = form.instance
+        before = getattr(calendar, "_schedule_before", None)
+        if before is None:
+            return  # A new calendar has no tickets.
+        moved = recalculate_deadlines(
+            tickets_using_calendar(calendar.pk),
+            before,
+            load_calendar_schedule(calendar.pk),
+            context={"calendar_id": calendar.pk},
+        )
+        report_recalculated_deadlines(self, request, moved)
 
 
 @admin.register(SlaPolicy)

@@ -1,10 +1,14 @@
+from datetime import timedelta
+
 import pytest
 from django.urls import reverse
 
 from apps.accounts.tests.factories import AdminUserFactory, AgentUserFactory
 from apps.organizations.models import Organization
 from apps.organizations.tests.factories import OrganizationFactory
-from apps.sla.tests.factories import BusinessCalendarFactory
+from apps.sla.tests.factories import BusinessCalendarFactory, BusinessHoursFactory
+from apps.tickets.models import EventType, Ticket, TicketEvent
+from apps.tickets.tests.factories import TicketFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -112,3 +116,43 @@ def test_agent_can_view_but_not_add_or_change(agent_client):
     assert detail.status_code == 200
     assert 'name="_save"' not in detail.content.decode()
     assert add.status_code == 403
+
+
+def test_switching_calendars_reprojects_the_organization_tickets(admin_client):
+    organization = OrganizationFactory()  # 24/7.
+    ticket = TicketFactory(organization=organization)
+    other = TicketFactory()  # Another organization, also 24/7.
+    office = BusinessCalendarFactory(timezone="Europe/Madrid")
+    for weekday in range(5):
+        BusinessHoursFactory(calendar=office, weekday=weekday)
+    old_calendar_id = organization.business_calendar_id
+
+    response = admin_client.post(
+        reverse("admin:organizations_organization_change", args=[organization.pk]),
+        {"name": organization.name, "business_calendar": office.pk, "is_active": "on"},
+        follow=True,
+    )
+
+    assert "Plazos de SLA recalculados en 1 incidencia." in response.content.decode()
+    # 24 business hours on an office calendar are about three working days.
+    updated = Ticket.objects.get(pk=ticket.pk)
+    assert updated.resolution_due_at > ticket.resolution_due_at + timedelta(days=1)
+    event = TicketEvent.objects.get(ticket=ticket, event_type=EventType.SLA_RECALCULATED)
+    assert event.metadata["organization_calendar"] == {"from": old_calendar_id, "to": office.pk}
+    assert Ticket.objects.get(pk=other.pk).resolution_due_at == other.resolution_due_at
+
+
+def test_saving_without_switching_calendars_records_nothing(admin_client):
+    organization = OrganizationFactory()
+    TicketFactory(organization=organization)
+
+    admin_client.post(
+        reverse("admin:organizations_organization_change", args=[organization.pk]),
+        {
+            "name": "Nuevo nombre",
+            "business_calendar": organization.business_calendar_id,
+            "is_active": "on",
+        },
+    )
+
+    assert not TicketEvent.objects.filter(event_type=EventType.SLA_RECALCULATED).exists()

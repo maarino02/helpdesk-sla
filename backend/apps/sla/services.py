@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from django.db import connection
 from django.db.models import F, Q
 
 from .business_time import Schedule, Slot, add_business_minutes
@@ -45,6 +46,51 @@ def load_organization_schedule(organization_id: int) -> Schedule:
     """The schedule of an organization's calendar (three queries)."""
     calendar = BusinessCalendar.objects.get(organizations__id=organization_id)
     return load_schedule(calendar)
+
+
+# Advisory lock namespace for business calendars: locks are (namespace, calendar
+# id). No other code may use namespace 1 for anything else.
+CALENDAR_LOCK_NAMESPACE = 1
+
+
+def lock_and_snapshot(calendar_id: int) -> Schedule:
+    """Take the calendar's exclusive lock and return its schedule as it is now.
+
+    Call it before changing the calendar, inside the transaction that changes it:
+    the snapshot is what the deadlines are reprojected from. Two edits of the same
+    calendar are serialized, so the second takes its snapshot after the first has
+    committed; ticket creation holds the shared lock while it computes deadlines
+    (share_calendar_lock), so it never uses a schedule that is about to change
+    without being included in the recalculation.
+
+    An advisory lock rather than SELECT ... FOR UPDATE on the row: row locks have
+    to pass the UPDATE policies of row-level security, which only admins do on
+    catalogs, so a client's FOR SHARE would silently lock nothing. Advisory locks
+    are not tied to rows and RLS does not apply to them. ADR-0005.
+    """
+    _advisory_lock("pg_advisory_xact_lock", calendar_id)
+    return load_calendar_schedule(calendar_id)
+
+
+def share_calendar_lock(calendar_id: int) -> None:
+    """Take the calendar's shared lock: compatible with other holders of the
+    shared lock (concurrent ticket creations), exclusive with lock_and_snapshot."""
+    _advisory_lock("pg_advisory_xact_lock_shared", calendar_id)
+
+
+def load_calendar_schedule(calendar_id: int) -> Schedule:
+    """The schedule of a calendar read now (three queries)."""
+    return load_schedule(BusinessCalendar.objects.get(pk=calendar_id))
+
+
+def _advisory_lock(function: str, calendar_id: int) -> None:
+    if not connection.in_atomic_block:
+        # A transaction-level lock taken in autocommit mode would be released at
+        # the end of this very statement. Fail loudly instead.
+        raise RuntimeError("Calendar locks need an open transaction.")
+    with connection.cursor() as cursor:
+        # The function name comes from this module, never from input.
+        cursor.execute(f"SELECT {function}(%s, %s)", [CALENDAR_LOCK_NAMESPACE, calendar_id])
 
 
 def resolve_policy(organization, priority: str) -> SlaPolicy:

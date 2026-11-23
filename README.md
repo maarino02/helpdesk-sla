@@ -151,6 +151,7 @@ in the [API reference](docs/api.md).
   - [ADR-0002](docs/adr/0002-sla-business-time-stored-due-dates.md): SLA in business time with stored due dates
   - [ADR-0003](docs/adr/0003-ticket-state-machine-service-layer.md): ticket state machine in the service layer
   - [ADR-0004](docs/adr/0004-rls-request-context.md): row-level security context per request (identify, then widen)
+  - [ADR-0005](docs/adr/0005-synchronous-deadline-recalculation.md): deadlines recalculated synchronously when a calendar changes
 
 ## License
 

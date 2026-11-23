@@ -10,7 +10,12 @@ from django.utils import timezone
 from apps.accounts.models import Role
 from apps.organizations.models import Organization
 from apps.sla.models import Priority
-from apps.sla.services import compute_due_dates, load_schedule, resolve_policy
+from apps.sla.services import (
+    compute_due_dates,
+    load_calendar_schedule,
+    resolve_policy,
+    share_calendar_lock,
+)
 from apps.tickets.models import Category, EventType, Ticket, TicketEvent
 
 
@@ -38,15 +43,24 @@ def create_ticket(
         # Reads first, without locks: the organization row lock taken below lasts
         # until the whole transaction commits (with ATOMIC_REQUESTS, the end of the
         # request), so nothing that can run before it should run while holding it.
-        organization = Organization.objects.select_related("business_calendar").get(
-            pk=requester.organization_id
-        )
+        organization = Organization.objects.get(pk=requester.organization_id)
         if not organization.is_active:
             raise ValidationError("La organización no está activa.")
         policy = resolve_policy(organization, priority)
-        schedule = load_schedule(organization.business_calendar)
+        # The calendar's shared lock before reading its schedule: a calendar change
+        # in progress holds the exclusive one, so this waits and then reads the new
+        # schedule; and a change that starts now waits for this ticket to commit,
+        # so its recalculation includes it (ADR-0005).
+        calendar_id = organization.business_calendar_id
+        share_calendar_lock(calendar_id)
+        schedule = load_calendar_schedule(calendar_id)
 
-        number = _next_ticket_number(organization.pk)
+        number, current_calendar_id = _next_ticket_number(organization.pk)
+        if current_calendar_id != calendar_id:
+            # The organization switched calendars and committed while this ticket
+            # waited for the organization lock: use the new calendar.
+            share_calendar_lock(current_calendar_id)
+            schedule = load_calendar_schedule(current_calendar_id)
         # The instant is taken after the lock: a creation that waited for it gets a
         # later created_at than the one it waited for, so numbers and creation times
         # are in the same order.
@@ -89,8 +103,10 @@ def _validate(requester, category: Category, priority: str) -> None:
         raise ValidationError(errors)
 
 
-def _next_ticket_number(organization_id: int) -> int:
+def _next_ticket_number(organization_id: int) -> tuple[int, int]:
     """Reserve the organization's next ticket number.
+
+    Returns it with the organization's calendar as read under the lock.
 
     SELECT ... FOR UPDATE locks the organization row: a concurrent creation for
     the same organization waits here until this transaction ends, and then reads
@@ -99,9 +115,9 @@ def _next_ticket_number(organization_id: int) -> int:
     (organization_id, number) constraint. Unlike a sequence, a rollback also
     undoes the increment, so numbers have no gaps.
     """
-    number = (
+    number, calendar_id = (
         Organization.objects.select_for_update()
-        .values_list("next_ticket_number", flat=True)
+        .values_list("next_ticket_number", "business_calendar_id")
         .get(pk=organization_id)
     )
     # A queryset UPDATE of this one column: the row trigger only lets clients and
@@ -109,4 +125,4 @@ def _next_ticket_number(organization_id: int) -> int:
     Organization.objects.filter(pk=organization_id).update(
         next_ticket_number=F("next_ticket_number") + 1
     )
-    return number
+    return number, calendar_id

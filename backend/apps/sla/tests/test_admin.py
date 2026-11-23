@@ -1,14 +1,22 @@
+from datetime import timedelta
+from zoneinfo import ZoneInfo
+
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
-from apps.accounts.tests.factories import AdminUserFactory, AgentUserFactory
+from apps.accounts.tests.factories import AdminUserFactory, AgentUserFactory, ClientUserFactory
 from apps.organizations.tests.factories import OrganizationFactory
 from apps.sla.models import BusinessCalendar, BusinessHours, Priority, SlaPolicy, Weekday
 from apps.sla.tests.factories import (
+    BusinessCalendarFactory,
     BusinessHoursFactory,
     HolidayFactory,
     SlaPolicyFactory,
 )
+from apps.tickets.models import EventType, Ticket, TicketEvent
+from apps.tickets.services.creation import create_ticket
+from apps.tickets.tests.factories import CategoryFactory, TicketFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -239,3 +247,75 @@ def test_admin_creates_a_24_7_calendar(admin_client):
 
     assert response.status_code == 302
     assert BusinessCalendar.objects.get(name="Madrid").business_hours.count() == 7
+
+
+def tomorrow_in(calendar):
+    return timezone.now().astimezone(ZoneInfo(calendar.timezone)).date() + timedelta(days=1)
+
+
+class TestDeadlineRecalculation:
+    """Saving a calendar reprojects the open tickets that use it (ADR-0005).
+
+    Test organizations have a 24/7 calendar and TicketFactory gives a deadline
+    about 24 real hours ahead, so a holiday tomorrow moves it.
+    """
+
+    def test_adding_a_holiday_moves_open_deadlines(self, admin_client):
+        organization = OrganizationFactory()
+        calendar = organization.business_calendar
+        ticket = TicketFactory(organization=organization)
+        data = calendar_form(
+            name=calendar.name,
+            initial_slots=list(calendar.business_hours.all()),
+            holidays=[(tomorrow_in(calendar).isoformat(), "Fiesta local")],
+        )
+
+        response = admin_client.post(
+            reverse("admin:sla_businesscalendar_change", args=[calendar.pk]), data, follow=True
+        )
+
+        assert "Plazos de SLA recalculados en 1 incidencia." in response.content.decode()
+        updated = Ticket.objects.get(pk=ticket.pk)
+        # The whole of tomorrow no longer counts.
+        assert updated.resolution_due_at >= ticket.resolution_due_at + timedelta(hours=23)
+        event = TicketEvent.objects.get(ticket=ticket, event_type=EventType.SLA_RECALCULATED)
+        assert event.metadata["calendar_id"] == calendar.pk
+
+    def test_renaming_records_nothing(self, admin_client):
+        organization = OrganizationFactory()
+        calendar = organization.business_calendar
+        ticket = TicketFactory(organization=organization)
+        data = calendar_form(name="Otro nombre", initial_slots=list(calendar.business_hours.all()))
+
+        response = admin_client.post(
+            reverse("admin:sla_businesscalendar_change", args=[calendar.pk]), data, follow=True
+        )
+
+        assert "recalculados" not in response.content.decode()
+        assert Ticket.objects.get(pk=ticket.pk).resolution_due_at == ticket.resolution_due_at
+        assert not TicketEvent.objects.filter(event_type=EventType.SLA_RECALCULATED).exists()
+
+
+def test_changing_the_time_zone_moves_open_deadlines(admin_client):
+    # The time zone is saved by save_model itself, before the inlines: the
+    # snapshot must be taken before it. Office hours in Madrid become office hours
+    # in New York, six hours later.
+    calendar = BusinessCalendarFactory(timezone="Europe/Madrid")
+    for weekday in range(5):
+        BusinessHoursFactory(calendar=calendar, weekday=weekday)
+    organization = OrganizationFactory(business_calendar=calendar)
+    SlaPolicyFactory(priority=Priority.MEDIUM, first_response_minutes=60, resolution_minutes=960)
+    ticket = create_ticket(
+        requester=ClientUserFactory(organization=organization),
+        title="Zona horaria",
+        description="Cambia la zona del calendario.",
+        category=CategoryFactory(),
+        priority=Priority.MEDIUM,
+    )
+    data = calendar_form(name=calendar.name, initial_slots=list(calendar.business_hours.all()))
+    data["timezone"] = "America/New_York"
+
+    admin_client.post(reverse("admin:sla_businesscalendar_change", args=[calendar.pk]), data)
+
+    assert Ticket.objects.get(pk=ticket.pk).resolution_due_at != ticket.resolution_due_at
+    assert TicketEvent.objects.filter(ticket=ticket, event_type=EventType.SLA_RECALCULATED).exists()
