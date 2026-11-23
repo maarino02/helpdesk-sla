@@ -57,6 +57,7 @@ def create_ticket(
             priority=priority,
             requester=requester,
             sla_policy=policy,
+            resolution_target_minutes=policy.resolution_minutes,
             first_response_due_at=due.first_response,
             resolution_due_at=due.resolution,
             # Explicit instead of the db_default: the deadlines are computed from

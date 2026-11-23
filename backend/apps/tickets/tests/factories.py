@@ -7,6 +7,7 @@ from apps.accounts.tests.factories import ClientUserFactory
 from apps.organizations.tests.factories import OrganizationFactory
 from apps.sla.models import Priority, SlaPolicy
 from apps.tickets.models import (
+    PAUSED_STATUSES,
     AlertKind,
     AlertLevel,
     Category,
@@ -60,6 +61,13 @@ class TicketFactory(factory.django.DjangoModelFactory):
         ClientUserFactory, organization=factory.SelfAttribute("..organization")
     )
     sla_policy = factory.LazyAttribute(lambda o: default_policy(o.priority))
+    resolution_target_minutes = factory.LazyAttribute(lambda o: o.sla_policy.resolution_minutes)
+    # Paused exactly in pending and resolved (ticket_sla_paused_at_matches_status),
+    # so any status passed to the factory gives a consistent row. status is not
+    # declared (the database default applies), hence getattr.
+    sla_paused_at = factory.LazyAttribute(
+        lambda o: timezone.now() if getattr(o, "status", None) in PAUSED_STATUSES else None
+    )
     first_response_due_at = factory.LazyAttribute(
         lambda o: minutes_after_now(o.sla_policy.first_response_minutes)
     )

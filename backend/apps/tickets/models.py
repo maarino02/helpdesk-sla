@@ -8,7 +8,7 @@ from apps.sla.models import Priority
 
 
 class Status(models.TextChoices):
-    # Allowed transitions live in tickets/services/state_machine.py (phase 4).
+    # Allowed transitions live in tickets/services/state_machine.py.
     NEW = "new", "Nuevo"
     OPEN = "open", "Abierto"
     PENDING = "pending", "En espera del cliente"
@@ -18,6 +18,8 @@ class Status(models.TextChoices):
 
 # A ticket has a resolution timestamp exactly while it is resolved or closed.
 RESOLVED_STATUSES = [Status.RESOLVED, Status.CLOSED]
+# The resolution clock is paused in these statuses (ADR-0002).
+PAUSED_STATUSES = [Status.PENDING, Status.RESOLVED]
 
 
 class Category(models.Model):
@@ -102,8 +104,15 @@ class Ticket(models.Model):
     # the ticket.
     first_response_due_at = models.DateTimeField()
     resolution_due_at = models.DateTimeField()
-    # Start of the current pause of the resolution clock (pending, resolved).
+    # Start of the current pause of the resolution clock: set exactly while the
+    # ticket is pending or resolved (CHECK below). In closed the clock is stopped
+    # for good, not paused.
     sla_paused_at = models.DateTimeField(null=True, blank=True)
+    # Business minutes the resolution may take, copied from the policy on creation
+    # and adjusted on priority changes. A copy, like the price on an order line:
+    # editing the policy must not change what open tickets were promised. With it,
+    # consumed = target - business minutes left until resolution_due_at.
+    resolution_target_minutes = models.IntegerField()
 
     # Key moments, with the business minutes consumed until each of them (the main
     # dashboard metric). The CHECKs below keep each pair in sync.
@@ -203,6 +212,18 @@ class Ticket(models.Model):
                 ),
                 name="ticket_resolution_minutes_with_timestamp",
             ),
+            # The resolution clock is paused exactly in pending and resolved.
+            models.CheckConstraint(
+                condition=(
+                    Q(status__in=PAUSED_STATUSES, sla_paused_at__isnull=False)
+                    | (~Q(status__in=PAUSED_STATUSES) & Q(sla_paused_at__isnull=True))
+                ),
+                name="ticket_sla_paused_at_matches_status",
+            ),
+            models.CheckConstraint(
+                condition=Q(resolution_target_minutes__gt=0),
+                name="ticket_resolution_target_positive",
+            ),
             # A CHECK passes when its condition is NULL (unknown), so NULL minutes are
             # accepted here; the two CHECKs above decide when they may be NULL.
             models.CheckConstraint(
@@ -288,6 +309,7 @@ class EventType(models.TextChoices):
     STATUS_CHANGED = "status_changed", "Cambio de estado"
     ASSIGNEE_CHANGED = "assignee_changed", "Cambio de asignación"
     PRIORITY_CHANGED = "priority_changed", "Cambio de prioridad"
+    CATEGORY_CHANGED = "category_changed", "Cambio de categoría"
     # System event after a calendar change (ADR-0002); actor is NULL.
     SLA_RECALCULATED = "sla_recalculated", "Recálculo del SLA"
 

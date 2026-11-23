@@ -86,7 +86,8 @@ erDiagram
         bigint sla_policy_id FK
         timestamptz first_response_due_at
         timestamptz resolution_due_at
-        timestamptz sla_paused_at "set while the clock is paused"
+        timestamptz sla_paused_at "set while pending or resolved"
+        int resolution_target_minutes "copied from the policy"
         timestamptz first_response_at
         int first_response_business_minutes "set on first response"
         timestamptz resolved_at
@@ -166,6 +167,8 @@ writing outside Django. They are not repeated in the table below.
 | `ticket` | `FOREIGN KEY (requester_id, organization_id) REFERENCES app_user (id, organization_id)` | The requester is a client of the ticket's organization (staff have no organization, so they never match). Created with `RunSQL`. |
 | `ticket` | `CHECK ((status = 'closed') = (closed_at IS NOT NULL))`, `CHECK ((status IN ('resolved', 'closed')) = (resolved_at IS NOT NULL))` | Timestamps match the status in both directions: no missing timestamps and no leftover ones (reopening clears `resolved_at`). |
 | `ticket` | `CHECK ((first_response_at IS NULL) = (first_response_business_minutes IS NULL))`, same idea for `resolved_at` and `resolution_business_minutes` | A business duration exists only when its timestamp does. |
+| `ticket` | `CHECK ((status IN ('pending', 'resolved')) = (sla_paused_at IS NOT NULL))` | The resolution clock is paused exactly in `pending` and `resolved`. In `closed` it is stopped for good, so there is no pause to resume. |
+| `ticket` | `CHECK (resolution_target_minutes > 0)` | The business minutes the resolution may take, copied from the policy on creation (and adjusted on priority changes). A copy, like the price on an order line: editing a policy does not change what open tickets were promised, and it keeps `resolution_business_minutes = target - minutes left until resolution_due_at` exact. |
 | `ticket` | `CHECK (first_response_business_minutes >= 0 AND resolution_business_minutes >= 0)` | No negative durations. `NULL` passes: a `CHECK` only rejects a condition that is false, not unknown. |
 | `ticket_comment`, `ticket_event`, `sla_alert` | `FOREIGN KEY (ticket_id, organization_id) REFERENCES ticket (id, organization_id)` | The denormalized `organization_id` can never contradict the ticket's. Created with `RunSQL`, since Django does not support composite foreign keys. They replace the simple foreign keys to `ticket` and `organization` (`db_constraint=False` in Django). Not deferrable, so the offending `INSERT` fails at once; `ON UPDATE` / `ON DELETE NO ACTION`, so a ticket can be neither moved to another organization nor deleted. |
 | `ticket_comment` | `CHECK (body ~ '\S')` | No empty or whitespace-only comments. |

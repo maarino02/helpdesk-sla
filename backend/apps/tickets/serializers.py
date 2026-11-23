@@ -7,7 +7,7 @@ fields explicitly, so nothing new leaks when a model gains a field.
 
 from rest_framework import serializers
 
-from apps.accounts.models import User
+from apps.accounts.models import Role, User
 from apps.organizations.models import Organization
 from apps.sla.models import Priority
 from apps.tickets.models import Category, Status, Ticket
@@ -108,3 +108,46 @@ class TicketFilterSerializer(serializers.Serializer):
         raise serializers.ValidationError(
             f'Debe ser "{ASSIGNEE_ME}", "{ASSIGNEE_NONE}" o el id de un usuario.'
         )
+
+
+class TransitionSerializer(serializers.Serializer):
+    """The target status of a transition. Whether it is allowed is decided by
+    the state machine, not here: the transition table has a single source.
+    """
+
+    to_status = serializers.ChoiceField(choices=Status.choices)
+
+
+class TicketUpdateSerializer(serializers.Serializer):
+    """What staff may change on a ticket. Every field is optional (PATCH).
+
+    Fields that cannot be edited here are rejected with a 400 instead of being
+    silently ignored, which is what DRF does by default: the client would believe
+    it had changed the status, for example, when nothing happened.
+    """
+
+    # Active staff only; the service checks it again for other callers.
+    assignee = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(role__in=[Role.AGENT, Role.ADMIN], is_active=True),
+        allow_null=True,
+        required=False,
+    )
+    priority = serializers.ChoiceField(choices=Priority.choices, required=False)
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.filter(is_active=True), required=False
+    )
+
+    READ_ONLY_HINTS = {
+        "status": "Usa /transitions/ para cambiar el estado.",
+    }
+
+    def validate(self, attrs):
+        unknown = set(self.initial_data) - set(self.fields)
+        if unknown:
+            raise serializers.ValidationError(
+                {
+                    name: self.READ_ONLY_HINTS.get(name, "Este campo no se puede modificar.")
+                    for name in sorted(unknown)
+                }
+            )
+        return attrs
