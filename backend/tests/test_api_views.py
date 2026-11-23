@@ -30,7 +30,7 @@ def drf_views(patterns=None, namespace=""):
 
 def test_the_urlconf_has_drf_views():
     # Guard for the test below: an empty list would make it pass vacuously.
-    assert {"accounts:me", "accounts:token"} <= {name for name, _ in drf_views()}
+    assert {"accounts:me", "accounts:token", "tickets:list"} <= {name for name, _ in drf_views()}
 
 
 def test_every_drf_view_uses_the_row_level_security_authentication():
