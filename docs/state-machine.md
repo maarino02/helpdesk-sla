@@ -33,13 +33,13 @@ stateDiagram-v2
 
 | From → To | Who | Effects |
 |---|---|---|
-| `new` → `open` | Agent or admin; automatic on the first public agent reply | Assigns the agent if the ticket is unassigned. |
+| `new` → `open` | Agent or admin; automatic on the first public agent reply | Assigns the agent if the ticket is unassigned, with an `assignee_changed` event. |
 | `open` → `pending` | Agent or admin | Pauses the resolution clock: `sla_paused_at = now()`. |
 | `pending` → `open` | Automatic when the client comments; also agent | Resumes the clock: extends `resolution_due_at` by the paused business minutes and clears `sla_paused_at`. |
 | `open` → `resolved` | Agent or admin | Sets `resolved_at` and `resolution_business_minutes`, and pauses the clock. |
 | `pending` → `resolved` | Agent or admin | Adds the paused time to the deadline before setting `resolved_at` and `resolution_business_minutes`; the clock stays stopped. |
 | `resolved` → `open` | Client (reopens) or agent | Extends the deadline by the time spent in `resolved`, clears `resolved_at`, `resolution_business_minutes` and `sla_paused_at`. |
-| `resolved` → `closed` | Client (confirms) or system after 7 days | Sets `closed_at`. Auto-close runs as a background job with no actor. |
+| `resolved` → `closed` | Client (confirms) or system after 7 days | Sets `closed_at` and clears `sla_paused_at`: the clock is stopped for good, not paused, and the deadline is not extended. Auto-close runs as a background job with no actor. |
 
 Any other combination is rejected with `409 Conflict`. A transition that exists but
 is not allowed for the actor's role is rejected with `403 Forbidden` (see ADR-0003).
@@ -61,6 +61,11 @@ Every transition records a `status_changed` event in `ticket_event`.
 - **Calendar changes.** If a holiday is added or working hours change, the remaining
   business time of tickets with a running or paused clock is projected again with the new
   calendar. Expired deadlines are never modified. See ADR-0002.
+- **Business minutes of the resolution.** Each ticket stores `resolution_target_minutes`,
+  copied from its policy on creation. Since the deadline already includes every pause,
+  the business minutes consumed are `target - business minutes left until the deadline`,
+  negative "left" included when the deadline has passed. No running total of pauses is
+  stored.
 - **Compliance.** A response is compliant if `first_response_at <= first_response_due_at`,
   and a resolution if `resolved_at <= resolution_due_at`. Since deadlines already include
   pauses, the dashboard only needs to compare columns.
