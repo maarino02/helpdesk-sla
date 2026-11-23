@@ -180,6 +180,8 @@ REST_FRAMEWORK = {
     # JSON only; dev.py adds the browsable API.
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_THROTTLE_RATES": {"login": "10/minute"},
+    # Domain exceptions raised by services become HTTP responses here.
+    "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
     # Throttling identifies clients by address. With the default (None), DRF uses
     # the whole X-Forwarded-For header, which the client writes: a new value per
     # attempt would bypass the limit. 0 uses REMOTE_ADDR; behind a proxy, set it
