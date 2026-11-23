@@ -65,7 +65,7 @@ class Ticket(models.Model):
         db_index=False,
     )
     # Per-client number shown as e.g. ACME-42. Assigned by the ticket service with
-    # SELECT ... FOR UPDATE on organization.next_ticket_number (phase 4).
+    # SELECT ... FOR UPDATE on organization.next_ticket_number.
     number = models.IntegerField()
     title = models.CharField(max_length=200)
     description = models.TextField()

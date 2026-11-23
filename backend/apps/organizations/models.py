@@ -17,8 +17,9 @@ class Organization(models.Model):
         on_delete=models.PROTECT,
         related_name="organizations",
     )
-    # Next per-client ticket number. Assigned with SELECT ... FOR UPDATE on this row
-    # (phase 4), so concurrent tickets of the same client never get the same number.
+    # Next per-client ticket number. The ticket service reserves it with
+    # SELECT ... FOR UPDATE on this row, so concurrent tickets of the same client
+    # never get the same number.
     next_ticket_number = models.IntegerField(db_default=1)
     # Clients are deactivated, never deleted: their tickets and history must remain.
     is_active = models.BooleanField(db_default=True)

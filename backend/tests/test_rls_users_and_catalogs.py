@@ -182,7 +182,7 @@ def test_ticket_numbering_can_lock_and_increment_the_counter(role):
     organization = OrganizationFactory()
     set_context(role, organization.id)
 
-    # The pattern the ticket service will use (phase 4).
+    # The pattern the ticket creation service uses.
     locked = Organization.objects.select_for_update().get(pk=organization.pk)
     updated = Organization.objects.filter(pk=locked.pk).update(
         next_ticket_number=F("next_ticket_number") + 1
