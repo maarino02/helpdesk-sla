@@ -11,6 +11,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.accounts.models import Role
+from apps.core.exceptions import ActionNotAllowed, DomainError, StateConflict
 from apps.organizations.models import Organization
 from apps.sla.business_time import add_business_minutes, business_minutes_between
 from apps.sla.services import load_schedule
@@ -35,16 +36,46 @@ TRANSITIONS: dict[tuple[str, str], frozenset[str]] = {
 }
 
 
-class TransitionError(Exception):
+class TransitionError(DomainError):
     """Base class: the transition was rejected and nothing was changed."""
 
+    def __init__(self, detail: str, from_status: str, to_status: str, **extra):
+        super().__init__(detail, **extra)
+        self.from_status = from_status
+        self.to_status = to_status
 
-class TransitionNotDefined(TransitionError):
-    """No such transition from the ticket's current status (HTTP 409)."""
+
+class TransitionNotDefined(TransitionError, StateConflict):
+    """No such transition from the ticket's current status (HTTP 409).
+
+    The response carries the current status: the client usually acted on a
+    stale view of the ticket and can refresh it without another request.
+    """
+
+    code = "transition_not_defined"
+
+    def __init__(self, from_status: str, to_status: str):
+        super().__init__(
+            f"La incidencia está en estado «{Status(from_status).label}» "
+            f"y no puede pasar a «{Status(to_status).label}».",
+            from_status,
+            to_status,
+            current_status=from_status,
+        )
 
 
-class TransitionNotAllowed(TransitionError):
+class TransitionNotAllowed(TransitionError, ActionNotAllowed):
     """The transition exists, but not for this actor (HTTP 403)."""
+
+    code = "transition_not_allowed"
+
+    def __init__(self, from_status: str, to_status: str):
+        super().__init__(
+            "No tienes permiso para pasar la incidencia de "
+            f"«{Status(from_status).label}» a «{Status(to_status).label}».",
+            from_status,
+            to_status,
+        )
 
 
 def transition(ticket: Ticket, to_status: str, actor, *, now: datetime | None = None) -> Ticket:
@@ -84,13 +115,14 @@ def transition(ticket: Ticket, to_status: str, actor, *, now: datetime | None = 
 def _check(ticket: Ticket, from_status: str, to_status: str, actor) -> None:
     allowed = TRANSITIONS.get((from_status, to_status))
     if allowed is None:
-        raise TransitionNotDefined(f"No transition from {from_status} to {to_status}.")
+        raise TransitionNotDefined(from_status, to_status)
     role = SYSTEM if actor is None else actor.role
-    if role not in allowed:
-        raise TransitionNotAllowed(f"Role {role} cannot move a ticket from {from_status}.")
-    # Defense in depth: the API only shows clients their organization's tickets.
-    if role == Role.CLIENT and actor.organization_id != ticket.organization_id:
-        raise TransitionNotAllowed("The ticket belongs to another organization.")
+    # The organization check is defense in depth: the API only shows clients
+    # their organization's tickets.
+    if role not in allowed or (
+        role == Role.CLIENT and actor.organization_id != ticket.organization_id
+    ):
+        raise TransitionNotAllowed(from_status, to_status)
 
 
 def _apply_effects(ticket: Ticket, from_status: str, to_status: str, actor, now) -> list[str]:
