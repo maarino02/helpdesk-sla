@@ -115,8 +115,12 @@ with system_context():
 ```
 
 `createsuperuser` and `changepassword` are overridden to run with `system_context()`.
-Organizations and calendars are not in the admin yet; create them in the shell inside
-`system_context()`.
+
+Change business calendars (slots, holidays, time zone) and an organization's calendar
+in the admin, not in the shell: saving there reprojects the SLA deadlines of the open
+tickets that use them, in the same transaction
+([ADR-0005](adr/0005-synchronous-deadline-recalculation.md)). A change made in the
+shell or with SQL leaves those deadlines computed with the old calendar.
 
 ### SQL console
 

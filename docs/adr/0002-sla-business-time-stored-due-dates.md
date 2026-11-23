@@ -1,6 +1,7 @@
 # ADR-0002: SLA deadlines calculated in business time and stored on the ticket
 
-- Status: Accepted
+- Status: Accepted, amended by [ADR-0005](0005-synchronous-deadline-recalculation.md)
+  (calendar changes are recalculated synchronously, not by a background job)
 - Date: 2026-11-13
 
 ## Context

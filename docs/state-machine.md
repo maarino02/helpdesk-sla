@@ -67,9 +67,12 @@ Every transition records a `status_changed` event in `ticket_event`.
   at `sla_paused_at`, when its clock stopped. In `resolved` the priority is locked (409):
   the resolution has been measured; reopen the ticket first. A closed ticket cannot be
   changed at all.
-- **Calendar changes.** If a holiday is added or working hours change, the remaining
-  business time of tickets with a running or paused clock is projected again with the new
-  calendar. Expired deadlines are never modified. See ADR-0002.
+- **Calendar changes.** If a holiday is added, working hours or the time zone change, or
+  an organization switches calendars, the remaining business time of tickets with a
+  running or paused clock is projected again with the new calendar, from now (running) or
+  from `sla_paused_at` (paused). Expired deadlines are never modified. It happens in the
+  same transaction as the change, with an `sla_recalculated` event per ticket. See
+  ADR-0002 and ADR-0005.
 - **Business minutes of the resolution.** Each ticket stores `resolution_target_minutes`,
   copied from its policy on creation. Since the deadline already includes every pause,
   the business minutes consumed are `target - business minutes left until the deadline`,
