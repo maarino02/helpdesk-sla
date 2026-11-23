@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from apps.core.admin_mixins import AdminRoleRequiredMixin
+
 from .models import Category, SlaAlert, Ticket
 
 
@@ -17,7 +19,7 @@ class ReadOnlyAdminMixin:
 
 
 @admin.register(Category)
-class CategoryAdmin(admin.ModelAdmin):
+class CategoryAdmin(AdminRoleRequiredMixin, admin.ModelAdmin):
     list_display = ("name", "is_active")
     list_filter = ("is_active",)
     search_fields = ("name",)

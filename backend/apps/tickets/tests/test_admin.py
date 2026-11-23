@@ -1,7 +1,7 @@
 import pytest
 from django.urls import reverse
 
-from apps.accounts.tests.factories import AdminUserFactory
+from apps.accounts.tests.factories import AdminUserFactory, AgentUserFactory
 from apps.tickets.models import Category
 from apps.tickets.tests.factories import CategoryFactory, SlaAlertFactory, TicketFactory
 
@@ -41,6 +41,19 @@ def test_admin_shows_form_error_for_duplicate_category(admin_client):
 
     assert response.status_code == 200
     assert "Ya existe una categoría con ese nombre." in response.content.decode()
+
+
+def test_agent_can_view_but_not_change_categories(client):
+    # Superuser: Django's permissions allow everything, only the role check denies.
+    client.force_login(AgentUserFactory(is_staff=True, is_superuser=True))
+    category = CategoryFactory()
+
+    detail = client.get(reverse("admin:tickets_category_change", args=[category.pk]))
+    add = client.get(reverse("admin:tickets_category_add"))
+
+    assert detail.status_code == 200
+    assert 'name="_save"' not in detail.content.decode()
+    assert add.status_code == 403
 
 
 def test_ticket_detail_is_read_only(admin_client):
