@@ -215,6 +215,11 @@ class Ticket(models.Model):
         ]
 
     def __str__(self) -> str:
+        return self.reference
+
+    @property
+    def reference(self) -> str:
+        """The reference clients see, e.g. ACME-42. Needs the organization loaded."""
         return f"{self.organization.slug.upper()}-{self.number}"
 
 
