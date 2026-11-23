@@ -65,6 +65,15 @@ class TestCreateTicket:
         assert ticket.first_response_due_at == NOW + timedelta(minutes=60)
         assert ticket.resolution_due_at == NOW + timedelta(minutes=480)
 
+    def test_target_is_a_copy_of_the_policy(self, requester, default_policy):
+        ticket = create(requester)
+        default_policy.resolution_minutes = 960
+        default_policy.save()
+
+        ticket.refresh_from_db()
+        # Editing the policy does not change what the open ticket was promised.
+        assert ticket.resolution_target_minutes == 480
+
     def test_organization_policy_is_used_when_it_exists(self, requester):
         own = SlaPolicyFactory(
             organization=requester.organization,

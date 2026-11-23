@@ -37,11 +37,11 @@ def test_status_defaults_to_new_on_raw_insert():
     with connection.cursor() as cursor:
         cursor.execute(
             "INSERT INTO ticket (organization_id, number, title, description, category_id,"
-            " priority, requester_id, sla_policy_id, first_response_due_at,"
-            " resolution_due_at, updated_at)"
+            " priority, requester_id, sla_policy_id, resolution_target_minutes,"
+            " first_response_due_at, resolution_due_at, updated_at)"
             " SELECT organization_id, number + 1, title, description, category_id,"
-            " priority, requester_id, sla_policy_id, first_response_due_at,"
-            " resolution_due_at, updated_at FROM ticket WHERE id = %s"
+            " priority, requester_id, sla_policy_id, resolution_target_minutes,"
+            " first_response_due_at, resolution_due_at, updated_at FROM ticket WHERE id = %s"
             " RETURNING status",
             [ticket.pk],
         )
@@ -264,3 +264,40 @@ def test_category_uniqueness_is_also_validated_by_full_clean():
 
 def test_category_is_active_by_default():
     assert CategoryFactory().is_active is True
+
+
+# SLA pause and target
+
+
+@pytest.mark.parametrize("status", [Status.PENDING, Status.RESOLVED])
+def test_paused_statuses_require_the_pause_start(status):
+    extra = {"resolved": True} if status == Status.RESOLVED else {"status": status}
+    assert_violates(
+        "ticket_sla_paused_at_matches_status", TicketFactory, sla_paused_at=None, **extra
+    )
+
+
+@pytest.mark.parametrize("status", [Status.NEW, Status.OPEN])
+def test_running_clock_has_no_pause_start(status):
+    assert_violates(
+        "ticket_sla_paused_at_matches_status",
+        TicketFactory,
+        status=status,
+        sla_paused_at=timezone.now(),
+    )
+
+
+def test_closed_ticket_clock_is_stopped_not_paused():
+    assert_violates(
+        "ticket_sla_paused_at_matches_status",
+        TicketFactory,
+        closed=True,
+        sla_paused_at=timezone.now(),
+    )
+
+
+@pytest.mark.parametrize("minutes", [0, -1])
+def test_resolution_target_must_be_positive(minutes):
+    assert_violates(
+        "ticket_resolution_target_positive", TicketFactory, resolution_target_minutes=minutes
+    )
