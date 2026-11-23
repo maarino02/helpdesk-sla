@@ -5,7 +5,7 @@
 Multi-tenant helpdesk with SLA tracking in business hours, built with Django,
 PostgreSQL Row-Level Security and Celery.
 
-> **Status:** in development. Phase 4 (tickets API) is complete; phase 5 (SLA engine) is next. See the [roadmap](#roadmap).
+> **Status:** in development. Phase 5 (SLA engine) is complete; phase 6 (background jobs) is next. See the [roadmap](#roadmap).
 
 ## Overview
 
@@ -49,7 +49,7 @@ A background process watches those deadlines and raises alerts before they are b
 - [x] **Phase 2 - Data model:** models, constraints, indexes and migrations
 - [x] **Phase 3 - Auth & isolation:** JWT, roles and Row-Level Security policies
 - [x] **Phase 4 - Tickets API:** CRUD, state transitions, comments and event history
-- [ ] **Phase 5 - SLA engine:** business-time calculation, holidays and pauses
+- [x] **Phase 5 - SLA engine:** business-time calculation, holidays and pauses
 - [ ] **Phase 6 - Background jobs:** SLA alerts and auto-close with Celery
 - [ ] **Phase 7 - Demo data:** realistic seed data and demo accounts
 - [ ] **Phase 8 - Analytics:** SQL dashboard queries, indexes and query plans
@@ -144,6 +144,8 @@ in the [API reference](docs/api.md).
 - [Development guide](docs/development.md): configuration, database roles, working
   with Row-Level Security, tests, checklist for new tables, troubleshooting
 - [API reference](docs/api.md): endpoints, permissions by role, pagination and errors
+- [SLA and business time](docs/sla.md): what a business minute is, how deadlines are
+  computed and how they move
 - [Data model](docs/data-model.md): ER diagram, constraints, indexes and RLS policies
 - [Ticket state machine](docs/state-machine.md): states, transitions and permissions
 - Architecture decision records:

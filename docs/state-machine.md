@@ -47,6 +47,8 @@ Every transition records a `status_changed` event in `ticket_event`.
 
 ## SLA rules
 
+A summary; the full rules, with examples, are in [`sla.md`](sla.md).
+
 - **When the clock runs.** The resolution clock runs only in `new` and `open`. It is
   paused in `pending` and `resolved`, so agents are not penalized while waiting for
   the client.
