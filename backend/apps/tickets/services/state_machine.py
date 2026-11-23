@@ -12,9 +12,8 @@ from django.utils import timezone
 
 from apps.accounts.models import Role
 from apps.core.exceptions import ActionNotAllowed, DomainError, StateConflict
-from apps.organizations.models import Organization
 from apps.sla.business_time import add_business_minutes, business_minutes_between
-from apps.sla.services import load_schedule
+from apps.sla.services import load_organization_schedule
 from apps.tickets.models import PAUSED_STATUSES, EventType, Status, Ticket, TicketEvent
 
 # Background jobs act with no user (actor=None).
@@ -87,13 +86,14 @@ def transition(ticket: Ticket, to_status: str, actor, *, now: datetime | None = 
     if to_status not in Status.values:
         # Callers validate input; an unknown status here is a bug, not a conflict.
         raise ValueError(f"Unknown status {to_status!r}.")
-    now = now or timezone.now()
 
     with transaction.atomic():
         # The row lock serializes concurrent transitions of this ticket. The status
         # that counts is the one read after getting the lock: a competing
-        # transition may have committed while this one waited.
+        # transition may have committed while this one waited. The instant too:
+        # taken before waiting, it could be earlier than the change waited for.
         locked = Ticket.objects.select_for_update().get(pk=ticket.pk)
+        now = now or timezone.now()
         from_status = locked.status
         _check(locked, from_status, to_status, actor)
 
@@ -136,7 +136,11 @@ def _apply_effects(ticket: Ticket, from_status: str, to_status: str, actor, now)
     changed = []
     resumes = from_status in PAUSED_STATUSES and to_status != Status.CLOSED
     # Loaded once, and only by the transitions that measure business time.
-    schedule = _schedule(ticket) if resumes or to_status == Status.RESOLVED else None
+    schedule = (
+        load_organization_schedule(ticket.organization_id)
+        if resumes or to_status == Status.RESOLVED
+        else None
+    )
 
     if resumes:
         # Leaving a pause: the deadline moves forward by the business minutes the
@@ -187,10 +191,3 @@ def _record_assignment(ticket: Ticket, assignee) -> None:
         to_value=str(assignee.pk),
     )
     ticket.assignee = assignee
-
-
-def _schedule(ticket: Ticket):
-    organization = Organization.objects.select_related("business_calendar").get(
-        pk=ticket.organization_id
-    )
-    return load_schedule(organization.business_calendar)

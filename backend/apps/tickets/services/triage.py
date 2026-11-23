@@ -71,10 +71,11 @@ def update_ticket(
     """
     if actor is None or actor.role not in STAFF:
         raise StaffOnly()
-    now = now or timezone.now()
 
     with transaction.atomic():
         locked = Ticket.objects.select_for_update().get(pk=ticket.pk)
+        # After the lock, as in transition(): not earlier than what it waited for.
+        now = now or timezone.now()
         if locked.status == Status.CLOSED:
             raise TicketClosed()
         changed = []

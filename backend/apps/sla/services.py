@@ -41,6 +41,12 @@ def load_schedule(calendar: BusinessCalendar) -> Schedule:
     )
 
 
+def load_organization_schedule(organization_id: int) -> Schedule:
+    """The schedule of an organization's calendar (three queries)."""
+    calendar = BusinessCalendar.objects.get(organizations__id=organization_id)
+    return load_schedule(calendar)
+
+
 def resolve_policy(organization, priority: str) -> SlaPolicy:
     """The organization's policy for a priority, or the default one.
 

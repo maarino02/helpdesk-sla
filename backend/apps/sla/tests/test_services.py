@@ -9,6 +9,7 @@ from apps.sla.services import (
     DueDates,
     MissingSlaPolicy,
     compute_due_dates,
+    load_organization_schedule,
     load_schedule,
     resolve_policy,
 )
@@ -109,3 +110,14 @@ def test_compute_due_dates():
         first_response=start + timedelta(minutes=60),
         resolution=start + timedelta(minutes=480),
     )
+
+
+def test_load_organization_schedule(django_assert_num_queries):
+    organization = OrganizationFactory(business_calendar__timezone="Atlantic/Canary")
+    BusinessHoursFactory(calendar=organization.business_calendar, weekday=Weekday.TUESDAY)
+
+    with django_assert_num_queries(3):  # Calendar, slots, holidays.
+        schedule = load_organization_schedule(organization.pk)
+
+    assert str(schedule.timezone) == "Atlantic/Canary"
+    assert schedule.weekly_slots[Weekday.TUESDAY] == (Slot(time(9), time(18)),)

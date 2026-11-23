@@ -32,7 +32,6 @@ def create_ticket(
     Raises ValidationError for invalid input and MissingSlaPolicy if no policy
     covers the priority.
     """
-    now = now or timezone.now()
     _validate(requester, category, priority)
 
     with transaction.atomic():
@@ -45,9 +44,14 @@ def create_ticket(
         if not organization.is_active:
             raise ValidationError("La organización no está activa.")
         policy = resolve_policy(organization, priority)
-        due = compute_due_dates(policy, load_schedule(organization.business_calendar), now)
+        schedule = load_schedule(organization.business_calendar)
 
         number = _next_ticket_number(organization.pk)
+        # The instant is taken after the lock: a creation that waited for it gets a
+        # later created_at than the one it waited for, so numbers and creation times
+        # are in the same order.
+        now = now or timezone.now()
+        due = compute_due_dates(policy, schedule, now)
         ticket = Ticket.objects.create(
             organization=organization,
             number=number,
