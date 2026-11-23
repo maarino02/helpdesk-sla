@@ -74,6 +74,10 @@ def test_concurrent_creations_get_consecutive_numbers(setup):
         assert Ticket.objects.count() == THREADS
         organization = Organization.objects.get(pk=requester.organization_id)
         assert organization.next_ticket_number == THREADS + 1
+        # The creation instant is taken after the lock, so creation times follow
+        # the numbers: a creation that waited is never older than the one before.
+        by_number = list(Ticket.objects.order_by("number").values_list("created_at", flat=True))
+    assert by_number == sorted(by_number)
 
 
 def test_creation_waits_for_the_organization_row_lock(setup):

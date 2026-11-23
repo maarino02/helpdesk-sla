@@ -12,5 +12,11 @@ urlpatterns = [
         views.TicketTransitionView.as_view(),
         name="transitions",
     ),
+    path(
+        "tickets/<int:pk>/comments/",
+        views.TicketCommentListCreateView.as_view(),
+        name="comments",
+    ),
+    path("tickets/<int:pk>/events/", views.TicketEventListView.as_view(), name="events"),
     path("categories/", views.CategoryListView.as_view(), name="categories"),
 ]

@@ -1,5 +1,6 @@
 """Ticket API views: they translate HTTP into selector and service calls."""
 
+from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from rest_framework import generics, status
 from rest_framework.pagination import CursorPagination
@@ -8,9 +9,13 @@ from rest_framework.response import Response
 
 from apps.accounts.permissions import IsClient, IsStaff
 from apps.tickets.models import Category
-from apps.tickets.selectors import ticket_list, tickets_for
+from apps.tickets.selectors import comments_for, events_for, ticket_list, tickets_for
 from apps.tickets.serializers import (
     CategorySerializer,
+    CommentCreateSerializer,
+    CommentSerializer,
+    EventDisplay,
+    EventSerializer,
     TicketCreateSerializer,
     TicketFilterSerializer,
     TicketListSerializer,
@@ -18,6 +23,7 @@ from apps.tickets.serializers import (
     TicketUpdateSerializer,
     TransitionSerializer,
 )
+from apps.tickets.services.comments import add_comment
 from apps.tickets.services.creation import create_ticket
 from apps.tickets.services.state_machine import transition
 from apps.tickets.services.triage import update_ticket
@@ -121,3 +127,64 @@ class CategoryListView(generics.ListAPIView):
     serializer_class = CategorySerializer
     pagination_class = None
     queryset = Category.objects.filter(is_active=True)
+
+
+class ChronologicalPagination(CursorPagination):
+    """Oldest first, as a conversation or a history is read. Bounded pages, so
+    a long-lived ticket never returns everything at once.
+    """
+
+    page_size = 50
+    ordering = ("created_at", "id")
+
+
+class TicketNestedMixin:
+    """For views under /tickets/{pk}/: the ticket, looked up among the ones the
+    user may see (404 otherwise), once per request.
+    """
+
+    def get_ticket(self):
+        if not hasattr(self, "_ticket"):
+            self._ticket = get_object_or_404(tickets_for(self.request.user), pk=self.kwargs["pk"])
+        return self._ticket
+
+
+class TicketCommentListCreateView(TicketNestedMixin, generics.ListCreateAPIView):
+    """GET: the conversation (clients never see internal notes). POST: add a
+    comment; the service applies its effects (first response, new -> open,
+    pending -> open) and decides who may write what (403, 409).
+    """
+
+    serializer_class = CommentSerializer
+    pagination_class = ChronologicalPagination
+
+    def get_queryset(self):
+        return comments_for(self.request.user, self.get_ticket())
+
+    def create(self, request, *args, **kwargs):
+        ticket = self.get_ticket()
+        serializer = CommentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        comment = add_comment(ticket, request.user, **serializer.validated_data)
+        # Only the comment: it is the resource created. A comment may also have
+        # moved the ticket; the interface reads the ticket again if it needs it.
+        return Response(CommentSerializer(comment).data, status=status.HTTP_201_CREATED)
+
+
+class TicketEventListView(TicketNestedMixin, generics.ListAPIView):
+    """The ticket history, with readable values for ids and codes."""
+
+    serializer_class = EventSerializer
+    pagination_class = ChronologicalPagination
+
+    def get_queryset(self):
+        return events_for(self.request.user, self.get_ticket())
+
+    def list(self, request, *args, **kwargs):
+        page = self.paginate_queryset(self.get_queryset())
+        serializer = EventSerializer(
+            page,
+            many=True,
+            context={**self.get_serializer_context(), "display": EventDisplay(page)},
+        )
+        return self.get_paginated_response(serializer.data)
