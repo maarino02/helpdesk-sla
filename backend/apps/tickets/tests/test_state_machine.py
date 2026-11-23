@@ -107,7 +107,8 @@ def test_status_is_read_from_the_locked_row_not_from_the_object():
 
 
 # Effects. Tickets are created at NOW with a 480-minute target (deadline NOW+480),
-# and business time is provisionally wall-clock time, so values are exact.
+# and organizations have a 24/7 calendar in the test data, so business time
+# equals wall-clock time and values are exact.
 
 
 @pytest.fixture

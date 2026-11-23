@@ -61,7 +61,7 @@ class TestCreateTicket:
         ticket = create(requester)
 
         assert ticket.sla_policy == default_policy
-        # Provisional wall-clock calculation.
+        # The organization's calendar is 24/7: business time is wall-clock time.
         assert ticket.first_response_due_at == NOW + timedelta(minutes=60)
         assert ticket.resolution_due_at == NOW + timedelta(minutes=480)
 

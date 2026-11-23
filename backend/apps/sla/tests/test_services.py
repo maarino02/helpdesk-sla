@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time
 
 import pytest
 
@@ -99,16 +99,20 @@ class TestResolvePolicy:
 
 
 def test_compute_due_dates():
-    calendar = BusinessCalendarFactory()
+    calendar = BusinessCalendarFactory(timezone="Europe/Madrid")
+    for weekday in range(5):  # Monday to Friday, 9:00-18:00 Madrid.
+        BusinessHoursFactory(calendar=calendar, weekday=weekday)
     policy = SlaPolicyFactory(first_response_minutes=60, resolution_minutes=480)
+    # Monday 23 November, 10:00 UTC = 11:00 in Madrid.
     start = datetime(2026, 11, 23, 10, 0, tzinfo=UTC)
 
     due = compute_due_dates(policy, load_schedule(calendar), start)
 
-    # Provisional wall-clock calculation.
     assert due == DueDates(
-        first_response=start + timedelta(minutes=60),
-        resolution=start + timedelta(minutes=480),
+        # 12:00 Madrid.
+        first_response=datetime(2026, 11, 23, 11, 0, tzinfo=UTC),
+        # 7 h on Monday (11:00-18:00) and 1 h on Tuesday: 10:00 Madrid.
+        resolution=datetime(2026, 11, 24, 9, 0, tzinfo=UTC),
     )
 
 
