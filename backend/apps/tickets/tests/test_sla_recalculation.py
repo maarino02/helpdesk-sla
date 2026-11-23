@@ -241,12 +241,13 @@ def test_event_records_the_change(calendar, ticket):
     }
 
 
-def test_lock_and_snapshot_locks_the_calendar_row(calendar):
+def test_lock_and_snapshot_takes_the_calendar_lock_first(calendar):
     with CaptureQueriesContext(connection) as queries:
         snapshot = lock_and_snapshot(calendar.pk)
 
     assert snapshot == load_schedule(calendar)
-    assert "FOR UPDATE" in queries.captured_queries[0]["sql"]
+    # The exclusive advisory lock, before reading anything.
+    assert "pg_advisory_xact_lock(" in queries.captured_queries[0]["sql"]
 
 
 def test_a_change_that_does_not_affect_the_deadline_records_nothing(organization, calendar):
