@@ -309,6 +309,7 @@ class EventType(models.TextChoices):
     STATUS_CHANGED = "status_changed", "Cambio de estado"
     ASSIGNEE_CHANGED = "assignee_changed", "Cambio de asignación"
     PRIORITY_CHANGED = "priority_changed", "Cambio de prioridad"
+    CATEGORY_CHANGED = "category_changed", "Cambio de categoría"
     # System event after a calendar change (ADR-0002); actor is NULL.
     SLA_RECALCULATED = "sla_recalculated", "Recálculo del SLA"
 
