@@ -108,3 +108,11 @@ class TicketFilterSerializer(serializers.Serializer):
         raise serializers.ValidationError(
             f'Debe ser "{ASSIGNEE_ME}", "{ASSIGNEE_NONE}" o el id de un usuario.'
         )
+
+
+class TransitionSerializer(serializers.Serializer):
+    """The target status of a transition. Whether it is allowed is decided by
+    the state machine, not here: the transition table has a single source.
+    """
+
+    to_status = serializers.ChoiceField(choices=Status.choices)

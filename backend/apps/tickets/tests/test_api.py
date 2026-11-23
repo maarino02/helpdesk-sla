@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from apps.accounts.tests.factories import AdminUserFactory, AgentUserFactory, ClientUserFactory
 from apps.sla.models import Priority
 from apps.sla.tests.factories import SlaPolicyFactory
-from apps.tickets.models import Status, Ticket
+from apps.tickets.models import EventType, Status, Ticket, TicketEvent
 from apps.tickets.tests.factories import CategoryFactory, TicketFactory
 
 pytestmark = pytest.mark.django_db
@@ -26,6 +26,10 @@ LIST_URL = reverse("tickets:list")
 
 def detail_url(ticket):
     return reverse("tickets:detail", args=[ticket.pk])
+
+
+def transitions_url(ticket):
+    return reverse("tickets:transitions", args=[ticket.pk])
 
 
 def api_as(user):
@@ -247,3 +251,105 @@ def test_categories_lists_only_active_ones(customer):
 
     assert response.status_code == 200
     assert response.json() == [{"id": active.pk, "name": "Hardware"}]
+
+
+class TestTransitions:
+    def test_agent_resolves_and_gets_the_updated_ticket(self, agent):
+        ticket = TicketFactory(status=Status.OPEN, assignee=agent)
+
+        response = api_as(agent).post(transitions_url(ticket), {"to_status": Status.RESOLVED})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == Status.RESOLVED
+        assert body["resolved_at"] is not None
+        assert body["assignee"]["id"] == agent.pk
+        assert "description" in body  # The full ticket.
+
+    def test_taking_a_new_ticket_shows_the_new_assignee(self, agent):
+        response = api_as(agent).post(transitions_url(TicketFactory()), {"to_status": "open"})
+
+        assert response.json()["assignee"] == {"id": agent.pk, "full_name": agent.full_name}
+
+    def test_client_reopens_a_resolved_ticket(self, customer):
+        ticket = TicketFactory(organization=customer.organization, resolved=True)
+
+        response = api_as(customer).post(transitions_url(ticket), {"to_status": Status.OPEN})
+
+        assert response.status_code == 200
+        assert response.json()["status"] == Status.OPEN
+
+    def test_transition_not_defined_is_a_409_with_the_current_status(self, agent):
+        ticket = TicketFactory(closed=True)
+
+        response = api_as(agent).post(transitions_url(ticket), {"to_status": Status.OPEN})
+
+        assert response.status_code == 409
+        assert response.json() == {
+            "detail": "La incidencia está en estado «Cerrado» y no puede pasar a «Abierto».",
+            "code": "transition_not_defined",
+            "current_status": Status.CLOSED,
+        }
+
+    def test_transition_not_allowed_for_the_role_is_a_403(self, agent):
+        ticket = TicketFactory(resolved=True)
+
+        response = api_as(agent).post(transitions_url(ticket), {"to_status": Status.CLOSED})
+
+        assert response.status_code == 403
+        assert response.json() == {
+            "detail": "No tienes permiso para pasar la incidencia de «Resuelto» a «Cerrado».",
+            "code": "transition_not_allowed",
+        }
+
+    @pytest.mark.parametrize("body", [{}, {"to_status": "archived"}, {"to_status": ""}])
+    def test_invalid_body_is_a_400(self, agent, body):
+        response = api_as(agent).post(transitions_url(TicketFactory()), body)
+
+        assert response.status_code == 400
+        assert "to_status" in response.json()
+
+    def test_another_organizations_ticket_is_not_found(self, customer):
+        ticket = TicketFactory(resolved=True)
+
+        response = api_as(customer).post(transitions_url(ticket), {"to_status": Status.OPEN})
+
+        # 404 before any 403 or 409: the ticket's existence is not revealed.
+        assert response.status_code == 404
+        assert Ticket.objects.get(pk=ticket.pk).status == Status.RESOLVED
+
+    def test_unauthenticated(self):
+        response = APIClient().post(transitions_url(TicketFactory()), {"to_status": "open"})
+
+        assert response.status_code == 401
+
+    def test_rejected_transition_changes_nothing(self, agent):
+        ticket = TicketFactory(resolved=True)
+
+        api_as(agent).post(transitions_url(ticket), {"to_status": Status.CLOSED})
+
+        assert Ticket.objects.get(pk=ticket.pk).status == Status.RESOLVED
+        assert not TicketEvent.objects.filter(ticket=ticket).exists()
+
+    def test_success_records_the_event_with_the_user(self, agent):
+        ticket = TicketFactory(status=Status.OPEN, assignee=agent)
+
+        api_as(agent).post(transitions_url(ticket), {"to_status": Status.PENDING})
+
+        event = TicketEvent.objects.get(ticket=ticket, event_type=EventType.STATUS_CHANGED)
+        assert (event.actor, event.from_value, event.to_value) == (agent, "open", "pending")
+
+    def test_response_loads_no_relation_lazily(self, agent):
+        ticket = TicketFactory(status=Status.OPEN, assignee=agent)
+
+        with CaptureQueriesContext(connection) as queries:
+            api_as(agent).post(transitions_url(ticket), {"to_status": Status.RESOLVED})
+
+        # Without the final read through the selector, serializing the response
+        # would run one SELECT per relation (requester, assignee, category...).
+        lazy_loads = [
+            q["sql"]
+            for q in queries.captured_queries
+            if q["sql"].startswith(('SELECT "app_user"', 'SELECT "category"'))
+        ]
+        assert lazy_loads == []

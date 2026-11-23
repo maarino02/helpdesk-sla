@@ -15,8 +15,10 @@ from apps.tickets.serializers import (
     TicketFilterSerializer,
     TicketListSerializer,
     TicketSerializer,
+    TransitionSerializer,
 )
 from apps.tickets.services.creation import create_ticket
+from apps.tickets.services.state_machine import transition
 
 
 class TicketCursorPagination(CursorPagination):
@@ -66,6 +68,30 @@ class TicketDetailView(generics.RetrieveAPIView):
 
     def get_queryset(self):
         return tickets_for(self.request.user)
+
+
+class TicketTransitionView(generics.GenericAPIView):
+    """POST {"to_status": ...}: move a ticket through the state machine.
+
+    Only authentication is required here: which roles may perform which
+    transition is decided by the state machine (403 and 409 come from it,
+    through the exception handler). Responds with the updated ticket.
+    """
+
+    serializer_class = TransitionSerializer
+
+    def get_queryset(self):
+        return tickets_for(self.request.user)
+
+    def post(self, request, *args, **kwargs):
+        ticket = self.get_object()  # 404 for tickets the user cannot see.
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        transition(ticket, serializer.validated_data["to_status"], request.user)
+        # Read again through the selector: one query with every relation the
+        # response shows, instead of one lazy query per relation.
+        updated = self.get_queryset().get(pk=ticket.pk)
+        return Response(TicketSerializer(updated).data)
 
 
 class CategoryListView(generics.ListAPIView):
