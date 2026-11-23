@@ -16,7 +16,13 @@ from zoneinfo import ZoneInfo
 from hypothesis import example, given
 from hypothesis import strategies as st
 
-from apps.sla.business_time import Schedule, Slot, add_business_minutes, business_minutes_between
+from apps.sla.business_time import (
+    Schedule,
+    Slot,
+    add_business_minutes,
+    business_minutes_between,
+    reproject,
+)
 
 ZONES = [
     "Europe/Madrid",
@@ -165,3 +171,13 @@ def test_always_open_is_real_time(zone, start, minutes):
 
     assert end == start + minutes * ONE_MINUTE
     assert business_minutes_between(start, end, calendar) == minutes
+
+
+@given(schedules(), instants, st.data())
+def test_reprojecting_to_the_same_calendar_keeps_the_deadline(calendar, anchor, data):
+    # Deadlines come from add_business_minutes, so they sit at the edge of a
+    # working minute and measuring them back gives the same instant.
+    limit = min(20000, 20 * _weekly_minutes(calendar))
+    due = add_business_minutes(anchor, data.draw(st.integers(0, limit)), calendar)
+
+    assert reproject(anchor, due, calendar, calendar) == due

@@ -47,6 +47,20 @@ def load_organization_schedule(organization_id: int) -> Schedule:
     return load_schedule(calendar)
 
 
+def lock_and_snapshot(calendar_id: int) -> Schedule:
+    """Lock a calendar row and return its schedule as it is now.
+
+    Call it before changing the calendar, inside the transaction that changes it:
+    the snapshot is what the deadlines are reprojected from. With the row locked,
+    two edits of the same calendar are serialized, so the second one takes its
+    snapshot after the first has committed. Without the lock, both would start from
+    the same snapshot and the second would reproject from a state that no longer
+    exists.
+    """
+    calendar = BusinessCalendar.objects.select_for_update().get(pk=calendar_id)
+    return load_schedule(calendar)
+
+
 def resolve_policy(organization, priority: str) -> SlaPolicy:
     """The organization's policy for a priority, or the default one.
 
