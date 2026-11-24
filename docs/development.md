@@ -26,7 +26,7 @@ for it to time out.
 | `DJANGO_ALLOWED_HOSTS` | Django | Comma-separated. |
 | `JWT_SIGNING_KEY` | Django | Signs API tokens. At least 32 characters, separate from `DJANGO_SECRET_KEY` so each can be rotated alone ([ADR-0004](adr/0004-rls-request-context.md)). Required in production and by Compose. |
 | `DATABASE_URL` | Every process | Connects as `helpdesk_app`, the runtime role. |
-| `DATABASE_OWNER_URL` | Migrations and tests only | Connects as `helpdesk_owner`, which owns the tables. In Compose only the `migrate` service gets it. |
+| `DATABASE_OWNER_URL` | Migrations, tests and `seed_demo --reset` only | Connects as `helpdesk_owner`, which owns the tables. In Compose only the `migrate` service gets it. |
 | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | `db` container | The superuser that creates the database and the roles. Never used by the application. |
 | `HELPDESK_OWNER_PASSWORD`, `HELPDESK_APP_PASSWORD` | `docker/postgres/roles.sql` | Passwords of the two roles. Must match the two database URLs. |
 | `REDIS_URL` | Celery, readiness check | Redis database 0: the broker. |
@@ -34,6 +34,7 @@ for it to time out.
 | `DRF_NUM_PROXIES` | Login throttling | Number of trusted proxies in front of the app. Default `0`: the client address is `REMOTE_ADDR`. Set it behind a proxy, or every client shares the proxy's limit. |
 | `EMAIL_URL` | Notifications | Email backend as a URL, e.g. `smtp+tls://user:password@host:587`. Default `consolemail://`: emails are printed to the worker log. Required in production. |
 | `DEFAULT_FROM_EMAIL` | Notifications | Sender of the notifications. Required in production. |
+| `DEMO_PASSWORD` | `seed_demo` | Password of every demo account. Development defaults to `demo1234`; elsewhere the command refuses to run without it. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS`, `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SECURE_HSTS_SECONDS`, `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` | Production | HTTPS settings. HSTS starts at 0. |
 | `WEB_CONCURRENCY` | Gunicorn | Worker processes in the image (default 2). |
 
@@ -133,6 +134,26 @@ in the admin, not in the shell: saving there reprojects the SLA deadlines of the
 tickets that use them, in the same transaction
 ([ADR-0005](adr/0005-synchronous-deadline-recalculation.md)). A change made in the
 shell or with SQL leaves those deadlines computed with the old calendar.
+
+### Demo data
+
+`make seed` fills an empty database with three clients (calendars in Madrid, Mexico
+City and 24x7), their SLA agreements, categories, agents and client users, and six
+months of tickets up to now. The demo accounts are printed at the end; all of them use
+`DEMO_PASSWORD`.
+
+The history is planned first (`apps/demo/plan.py`, no database) and then replayed
+through the real services with each planned instant as `now` (`replay.py`), so
+deadlines, pauses, business minutes and events are computed as in production. Nobody
+is notified, and the SLA alerts due at the end are raised once. Options:
+`make seed ARGS="--tickets 300 --seed 2"`. The default 1500 tickets take about 2.5
+minutes from Windows (each query crosses the Docker Desktop network).
+
+It refuses to run if there are clients, calendars, policies or categories already.
+`make seed ARGS=--reset` empties every business table first with `TRUNCATE` on the
+owner's connection, **including every user and superuser**. Ids are not restarted: a
+token issued before the reset names its user by id, and that id must not belong to
+somebody else afterwards.
 
 ### SQL console
 
@@ -250,6 +271,8 @@ explicit decision.
    A materialized view has no row-level security at all and needs its own decision.
 7. **Reverse SQL.** Every `RunSQL` gets a `reverse_sql`; check with
    `migrate --database owner <app> <previous migration>` and back.
+8. **Demo reset.** Add the table to `TABLES` in `apps/demo/reset.py`, or
+   `seed_demo --reset` fails because the table references one that is emptied.
 
 ## Troubleshooting
 

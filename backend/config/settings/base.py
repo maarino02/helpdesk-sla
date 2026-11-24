@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "apps.sla",
     "apps.organizations",
     "apps.tickets",
+    "apps.demo",
 ]
 
 MIDDLEWARE = [
@@ -172,6 +173,10 @@ EMAIL_TIMEOUT = 10  # seconds
 # Resolved tickets the client neither confirms nor reopens are closed after this
 # much calendar time (not business time: it is the client's window to react).
 AUTO_CLOSE_AFTER = timedelta(days=7)
+
+# Password of every account created by seed_demo. No default outside development:
+# the command refuses to run without it, so a public demo never gets a known one.
+DEMO_PASSWORD = env("DEMO_PASSWORD", default="")
 
 # Security
 # Health checks come from inside the container network over plain HTTP, without

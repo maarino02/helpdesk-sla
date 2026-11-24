@@ -1,4 +1,5 @@
 import datetime
+import re
 
 import pytest
 from django.db import connection
@@ -209,12 +210,14 @@ def test_statements_can_use_their_partial_indexes(statement, index_prefix):
     # With seq scans disabled the planner takes an index whenever one is usable.
     # A partial index is usable only if the WHERE implies its predicate: if a
     # statement stops repeating it, the plan falls back to a seq scan on ticket.
-    # Which of the two indexes of the clock it picks depends on the statistics
-    # (both have the same predicate), so only the clock is checked.
+    # Which of the two indexes of the clock it picks, and whether it reads it with
+    # an index scan ("using <index>") or a bitmap scan ("Bitmap Index Scan on
+    # <index>"), depends on the statistics (both indexes have the same predicate),
+    # so only the clock is checked.
     with connection.cursor() as cursor:
         cursor.execute("SET LOCAL enable_seqscan = off")
         cursor.execute("EXPLAIN (COSTS OFF) " + statement, {"now": NOW})
         plan = "\n".join(row[0] for row in cursor.fetchall())
 
     assert "Seq Scan on ticket" not in plan, plan
-    assert f"using {index_prefix}" in plan, plan
+    assert re.search(rf"(using|Bitmap Index Scan on) {index_prefix}", plan), plan
