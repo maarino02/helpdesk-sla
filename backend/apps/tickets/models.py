@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.db import models
-from django.db.models import CharField, Func, Q
+from django.db.models import CharField, F, Func, Q
 from django.db.models.functions import Lower, Now
 from django.db.models.lookups import Exact
 
@@ -104,6 +104,12 @@ class Ticket(models.Model):
     # the ticket.
     first_response_due_at = models.DateTimeField()
     resolution_due_at = models.DateTimeField()
+    # When 80 % of each deadline's business time is consumed: the SLA job raises
+    # the warning alert from here with plain comparisons and partial indexes, as it
+    # does with the deadlines (business time cannot be computed in SQL). Derived
+    # data: rewritten with the deadlines by the ticket services.
+    first_response_warning_at = models.DateTimeField()
+    resolution_warning_at = models.DateTimeField()
     # Start of the current pause of the resolution clock: set exactly while the
     # ticket is pending or resolved (CHECK below). In closed the clock is stopped
     # for good, not paused.
@@ -149,6 +155,19 @@ class Ticket(models.Model):
                 fields=["first_response_due_at"],
                 condition=Q(first_response_at__isnull=True),
                 name="ticket_first_resp_due_idx",
+            ),
+            # The same partial conditions for the warning instants. The job's query
+            # for the first response adds a status filter, which does not stop the
+            # planner from using this index (its WHERE still implies the predicate).
+            models.Index(
+                fields=["resolution_warning_at"],
+                condition=Q(status__in=[Status.NEW, Status.OPEN]),
+                name="ticket_resolution_warn_idx",
+            ),
+            models.Index(
+                fields=["first_response_warning_at"],
+                condition=Q(first_response_at__isnull=True),
+                name="ticket_first_resp_warn_idx",
             ),
             # Monthly dashboard aggregations and the default -created_at ordering:
             # a B-tree returns rows already sorted, so ORDER BY ... LIMIT needs no sort.
@@ -211,6 +230,15 @@ class Ticket(models.Model):
                     | Q(resolved_at__isnull=False, resolution_business_minutes__isnull=False)
                 ),
                 name="ticket_resolution_minutes_with_timestamp",
+            ),
+            # A warning never comes after its deadline.
+            models.CheckConstraint(
+                condition=Q(first_response_warning_at__lte=F("first_response_due_at")),
+                name="ticket_first_resp_warn_before_due",
+            ),
+            models.CheckConstraint(
+                condition=Q(resolution_warning_at__lte=F("resolution_due_at")),
+                name="ticket_resolution_warn_before_due",
             ),
             # The resolution clock is paused exactly in pending and resolved.
             models.CheckConstraint(

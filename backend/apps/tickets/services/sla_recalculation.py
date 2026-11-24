@@ -16,6 +16,7 @@ from django.utils import timezone
 
 from apps.sla.business_time import Schedule, reproject
 from apps.tickets.models import PAUSED_STATUSES, EventType, Status, Ticket, TicketEvent
+from apps.tickets.services.deadlines import refresh_warnings
 
 # Tickets whose clock is running or paused. Closed ones are finished.
 OPEN_STATUSES = [Status.NEW, Status.OPEN, Status.PENDING, Status.RESOLVED]
@@ -91,7 +92,9 @@ def _reproject_ticket(ticket: Ticket, old: Schedule, new: Schedule, now, context
     if not changed:
         return False
 
-    ticket.save(update_fields=[*changed, "updated_at"])
+    # With the new calendar: the warnings are counted backwards from the
+    # deadlines in business time.
+    ticket.save(update_fields=[*changed, *refresh_warnings(ticket, new), "updated_at"])
     TicketEvent.objects.create(
         ticket=ticket,
         organization_id=ticket.organization_id,

@@ -38,10 +38,12 @@ def test_status_defaults_to_new_on_raw_insert():
         cursor.execute(
             "INSERT INTO ticket (organization_id, number, title, description, category_id,"
             " priority, requester_id, sla_policy_id, resolution_target_minutes,"
-            " first_response_due_at, resolution_due_at, updated_at)"
+            " first_response_due_at, resolution_due_at, first_response_warning_at,"
+            " resolution_warning_at, updated_at)"
             " SELECT organization_id, number + 1, title, description, category_id,"
             " priority, requester_id, sla_policy_id, resolution_target_minutes,"
-            " first_response_due_at, resolution_due_at, updated_at FROM ticket WHERE id = %s"
+            " first_response_due_at, resolution_due_at, first_response_warning_at,"
+            " resolution_warning_at, updated_at FROM ticket WHERE id = %s"
             " RETURNING status",
             [ticket.pk],
         )
@@ -301,3 +303,20 @@ def test_resolution_target_must_be_positive(minutes):
     assert_violates(
         "ticket_resolution_target_positive", TicketFactory, resolution_target_minutes=minutes
     )
+
+
+@pytest.mark.parametrize(
+    ("warning", "due"),
+    [
+        ("first_response_warning_at", "first_response_due_at"),
+        ("resolution_warning_at", "resolution_due_at"),
+    ],
+)
+def test_warning_cannot_come_after_its_deadline(warning, due):
+    later = timezone.now() + timezone.timedelta(days=30)
+    constraint = {
+        "first_response_warning_at": "ticket_first_resp_warn_before_due",
+        "resolution_warning_at": "ticket_resolution_warn_before_due",
+    }[warning]
+
+    assert_violates(constraint, TicketFactory, **{warning: later})

@@ -17,6 +17,7 @@ from apps.sla.services import (
     share_calendar_lock,
 )
 from apps.tickets.models import Category, EventType, Ticket, TicketEvent
+from apps.tickets.services.deadlines import refresh_warnings
 
 
 def create_ticket(
@@ -66,7 +67,7 @@ def create_ticket(
         # are in the same order.
         now = now or timezone.now()
         due = compute_due_dates(policy, schedule, now)
-        ticket = Ticket.objects.create(
+        ticket = Ticket(
             organization=organization,
             number=number,
             title=title,
@@ -82,6 +83,8 @@ def create_ticket(
             # this same instant.
             created_at=now,
         )
+        refresh_warnings(ticket, schedule)
+        ticket.save(force_insert=True)
         TicketEvent.objects.create(
             ticket=ticket,
             organization=organization,

@@ -15,6 +15,7 @@ from apps.core.exceptions import ActionNotAllowed, DomainError, StateConflict
 from apps.sla.business_time import add_business_minutes, business_minutes_between
 from apps.sla.services import load_organization_schedule
 from apps.tickets.models import PAUSED_STATUSES, EventType, Status, Ticket, TicketEvent
+from apps.tickets.services.deadlines import refresh_warnings
 
 # Background jobs act with no user (actor=None).
 SYSTEM = "system"
@@ -148,7 +149,7 @@ def _apply_effects(ticket: Ticket, from_status: str, to_status: str, actor, now)
         paused = business_minutes_between(ticket.sla_paused_at, now, schedule)
         ticket.resolution_due_at = add_business_minutes(ticket.resolution_due_at, paused, schedule)
         ticket.sla_paused_at = None
-        changed += ["resolution_due_at", "sla_paused_at"]
+        changed += ["resolution_due_at", "sla_paused_at", *refresh_warnings(ticket, schedule)]
 
     if from_status == Status.NEW and ticket.assignee_id is None:
         # The agent who takes an unassigned ticket becomes its assignee. new -> open

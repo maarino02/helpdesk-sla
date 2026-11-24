@@ -147,6 +147,14 @@ CELERY_BEAT_SCHEDULE = {
         "task": "apps.core.tasks.ping",
         "schedule": 300.0,  # seconds
     },
+    "raise-sla-alerts": {
+        "task": "apps.tickets.tasks.raise_sla_alerts",
+        "schedule": 60.0,
+        # Each run catches up with everything due, so a run still queued when
+        # the next one is sent is redundant: after a worker outage, discard the
+        # backlog instead of running it N times.
+        "options": {"expires": 60},
+    },
 }
 
 # Security

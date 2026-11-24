@@ -84,8 +84,18 @@ reads or writes tenant rows must set the system context first:
 ```python
 def forwards(apps, schema_editor):
     schema_editor.execute("SELECT set_config('app.role', 'system', true)")
-    ...
+    db = schema_editor.connection.alias
+    Ticket = apps.get_model("tickets", "Ticket")
+    for ticket in Ticket.objects.using(db).iterator():
+        ...
 ```
+
+Every query in a `RunPython` must go through `.using(schema_editor.connection.alias)`.
+`migrate --database owner` runs on the owner's connection, while `Ticket.objects` alone
+uses `default`, a different session as `helpdesk_app`: it would not have the system
+context (it is per connection) and it would wait forever for the lock that the
+migration's own `ALTER TABLE` holds. `test_migrations.py` reproduces this with a lock
+timeout.
 
 ## Working with data
 
