@@ -75,6 +75,21 @@ class PeriodSerializer(serializers.Serializer):
         return {**attrs, "start": start, "end": end, "time_zone": zone}
 
 
+class ScopeSerializer(serializers.Serializer):
+    """The filters of a snapshot metric: the client only."""
+
+    organization = serializers.IntegerField(required=False, min_value=1)
+
+    def validate(self, attrs):
+        # A period would be silently ignored: say so instead.
+        given = sorted({"start", "end"} & set(self.initial_data))
+        if given:
+            raise serializers.ValidationError(
+                dict.fromkeys(given, "Esta métrica muestra el estado actual: no admite periodo.")
+            )
+        return attrs
+
+
 def read_period(request) -> Period:
     """The period and client of the request, scoped to what the user may see."""
     serializer = PeriodSerializer(data=request.query_params)
@@ -86,6 +101,13 @@ def read_period(request) -> Period:
         organization_id=_scoped_organization(request.user, data.get("organization")),
         time_zone=data["time_zone"],
     )
+
+
+def read_organization(request) -> int | None:
+    """The client of a snapshot request, scoped as in read_period."""
+    serializer = ScopeSerializer(data=request.query_params)
+    serializer.is_valid(raise_exception=True)
+    return _scoped_organization(request.user, serializer.validated_data.get("organization"))
 
 
 def _scoped_organization(user, requested: int | None) -> int | None:

@@ -76,3 +76,11 @@ def test_response_time_medians_match_python(seeded):
     for month, minutes in by_month.items():
         assert totals[month]["resolutions"] == len(minutes)
         assert totals[month]["resolution_median"] == round(statistics.median(minutes), 1)
+
+
+def test_aging_counts_every_open_ticket_once(seeded):
+    rows = run("open_ticket_aging", {"now": NOW, "org": None})
+
+    open_work = Ticket.objects.filter(status__in=["new", "open", "pending"])
+    assert sum(row["tickets"] for row in rows) == open_work.count() > 0
+    assert sum(row["pending"] for row in rows) == open_work.filter(status="pending").count()

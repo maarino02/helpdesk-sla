@@ -50,6 +50,7 @@ curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 | `GET /api/categories/` | Any user | Active categories, to fill the creation form. Not paginated. |
 | `GET /api/analytics/sla-compliance/` | Any user | SLA compliance per month and priority. See [Analytics](#analytics). |
 | `GET /api/analytics/response-times/` | Any user | Median and p90 response and resolution times per month and priority. |
+| `GET /api/analytics/open-ticket-aging/` | Any user | Open tickets by age right now, with how many have breached their SLA. |
 
 "Any user" means any authenticated user, but only for the tickets they may see: clients
 see every ticket of their organization, agents and admins see all of them. A ticket the
@@ -230,6 +231,34 @@ times in minutes:
   month, not an average of the priorities' figures.
 - As in SLA compliance, each outcome counts in the month it happened, and a cell without
   outcomes has `null` times.
+
+### Open ticket aging
+
+`GET /api/analytics/open-ticket-aging/`: a snapshot of the work still to do, so it takes
+`organization` but no period (`start` or `end` are a `400`). One row per age bucket,
+youngest first, empty buckets included:
+
+```json
+{
+  "as_of": "2026-11-24T12:00:00Z",
+  "organization": null,
+  "results": [
+    {"bucket": "under_1_day", "min_days": 0, "max_days": 1, "tickets": 2,
+     "new": 1, "open": 1, "pending": 0,
+     "resolution_breached": 0, "first_response_overdue": 1},
+    ...
+  ]
+}
+```
+
+- Open means `new`, `open` or `pending`. A resolved ticket is waiting for the client's
+  confirmation, not for the support team, and is not counted.
+- Age is wall-clock time since creation; buckets are `[min_days, max_days)`, so a ticket
+  exactly one day old is in `1_to_3_days`. `over_7_days` has `max_days: null`.
+- `resolution_breached`: the deadline came before the clock stopped. A pending ticket
+  paused before its deadline is not breached.
+- `first_response_overdue`: not answered yet and past the deadline. A late first
+  response that has already happened is counted by SLA compliance instead.
 
 ## Pagination
 
