@@ -11,16 +11,18 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.apps import apps
 from django.core.management import CommandError, call_command
+from django.utils import timezone
 
 from apps.accounts.models import Role, User
 from apps.accounts.tests.factories import AdminUserFactory
 from apps.demo import reset
 from apps.demo.catalog import nth_weekday
+from apps.demo.plan import history
 from apps.organizations.models import Organization
 from apps.sla.business_time import business_minutes_between
 from apps.sla.models import Holiday, Priority
 from apps.sla.services import load_calendar_schedule, resolve_policy
-from apps.tickets.models import Category
+from apps.tickets.models import Category, Ticket
 from apps.tickets.tests.factories import CategoryFactory
 
 pytestmark = pytest.mark.django_db
@@ -118,12 +120,12 @@ def test_calendars_count_the_expected_business_time(slug, zone, business_hours_i
     assert minutes == business_hours_in_week * 60
 
 
-def test_holidays_cover_last_year_to_next_year():
-    seed()
-    this_year = datetime.date.today().year
+def test_holidays_cover_the_history_and_next_year():
+    call_command("seed_demo", tickets=0, months=24, stdout=io.StringIO())
+    now = timezone.now()
 
     years = {holiday.date.year for holiday in Holiday.objects.all()}
-    assert years == {this_year - 1, this_year, this_year + 1}
+    assert years == set(range((now - history(24)).year, now.year + 2))
 
 
 @pytest.mark.parametrize(
@@ -136,6 +138,36 @@ def test_holidays_cover_last_year_to_next_year():
 )
 def test_nth_weekday(year, month, n, expected):
     assert nth_weekday(year, month, 0, n) == expected
+
+
+# Volume options
+
+
+def test_extra_clients_cycle_through_the_calendars_and_add_agents():
+    call_command("seed_demo", tickets=0, clients=8, stdout=io.StringIO())
+
+    extra = Organization.objects.filter(slug__startswith="cliente-").order_by("slug")
+    assert [org.slug for org in extra] == [f"cliente-{i:03}" for i in range(1, 9)]
+    assert {org.business_calendar.timezone for org in extra} == {
+        "Europe/Madrid",
+        "America/Mexico_City",
+        "UTC",
+    }
+    assert all(org.users.count() == 3 for org in extra)
+    # One more agent every four extra clients.
+    assert User.objects.filter(email__startswith="agente0").count() == 2
+
+
+def test_bulk_seed_end_to_end():
+    out = io.StringIO()
+
+    call_command("seed_demo", tickets=60, bulk=True, clients=2, months=12, stdout=out)
+
+    assert Ticket.objects.count() == 60
+    assert Organization.objects.get(slug="alameda").next_ticket_number == (
+        Ticket.objects.filter(organization__slug="alameda").count() + 1
+    )
+    assert "60/60 tickets" in out.getvalue()
 
 
 # Checks before writing
