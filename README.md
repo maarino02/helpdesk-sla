@@ -5,7 +5,7 @@
 Multi-tenant helpdesk with SLA tracking in business hours, built with Django,
 PostgreSQL Row-Level Security and Celery.
 
-> **Status:** in development. Phase 7 (demo data) is complete; phase 8 (analytics) is next. See the [roadmap](#roadmap).
+> **Status:** in development. Phase 8 (analytics) is complete; phase 9 (frontend) is next. See the [roadmap](#roadmap).
 
 ## Overview
 
@@ -32,8 +32,9 @@ A background process watches those deadlines and raises alerts before they are b
 - Email notifications to the requester and to the support team
 - Demo data: three clients with different calendars and months of realistic ticket
   history generated through the real services, plus a bulk mode for volume
-- Analytics dashboard built on hand-written SQL: SLA compliance, response and resolution
-  times, ticket aging, agent workload and category trends
+- Analytics built on hand-written SQL: SLA compliance, response and resolution times,
+  ticket aging, agent workload, category trends and a daily backlog rebuilt from the
+  event history, with every index decision measured on 200,000 tickets
 
 ## Tech stack
 
@@ -56,7 +57,7 @@ A background process watches those deadlines and raises alerts before they are b
 - [x] **Phase 5 - SLA engine:** business-time calculation, holidays and pauses
 - [x] **Phase 6 - Background jobs:** SLA alerts, auto-close and email notifications with Celery
 - [x] **Phase 7 - Demo data:** realistic seed data and demo accounts
-- [ ] **Phase 8 - Analytics:** SQL dashboard queries, indexes and query plans
+- [x] **Phase 8 - Analytics:** SQL dashboard queries, indexes and query plans
 - [ ] **Phase 9 - Frontend:** ticket views and dashboard with Chart.js
 - [ ] **Phase 10 - Release:** deployment, screenshots and live demo
 
@@ -131,6 +132,7 @@ two beat schedulers would send every periodic task twice.
 |-------------------------|----------------------------------------------------------|
 | `make seed`             | Fill an empty database with demo data (`ARGS=--reset` to empty it first) |
 | `make bench-db`         | Build the measurement database with 200,000 tickets      |
+| `make bench-queries`    | Time the dashboard queries on it (`EXPLAIN ANALYZE`)     |
 | `make test`             | Run the test suite against PostgreSQL (needs `make up`)  |
 | `make lint`             | Check linting and formatting with ruff, as CI does       |
 | `make format`           | Apply ruff autofixes and format the code                 |
@@ -147,6 +149,22 @@ A JSON API with JWT authentication: tickets, state transitions, triage, comments
 history. Clients see only their organization's tickets, and every status change goes
 through the state machine. Endpoints, permissions by role, pagination and error codes are
 in the [API reference](docs/api.md).
+
+### Analytics
+
+Six dashboard metrics, each one a SQL file run on the request's connection, so that
+Row-Level Security isolates clients exactly as it does for the rest of the API:
+
+- SLA compliance and response times (median and p90 in business minutes) per month and
+  priority, with `GROUPING SETS` and `percentile_cont`
+- Open ticket aging and the workload per agent (staff only), a snapshot of the work
+  still to do
+- Category trends with `lag()` and `rank()` over a complete grid of months
+- The daily backlog, rebuilt from the append-only event history with a running sum
+
+Each query is tested with exact results on hand-built data and cross-checked against
+the ORM on the demo history. How they are built, and the measurements behind every
+index kept, added or left out, are in [Analytics](docs/analytics.md).
 
 ### Background jobs
 
@@ -186,6 +204,8 @@ reuses ids are in [Demo data](docs/demo-data.md).
   notifications: schedules, idempotency and delivery guarantees
 - [Demo data](docs/demo-data.md): demo accounts, the catalog, how the history is
   planned and written (through the services or in bulk), resetting and volume
+- [Analytics](docs/analytics.md): how each dashboard query is built and tested, and
+  the index review with its measurements
 - [Data model](docs/data-model.md): ER diagram, constraints, indexes and RLS policies
 - [Ticket state machine](docs/state-machine.md): states, transitions and permissions
 - Architecture decision records:

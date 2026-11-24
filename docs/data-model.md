@@ -1,7 +1,7 @@
 # Data model
 
 This document describes the PostgreSQL data model of HelpDesk SLA: entities,
-relationships, integrity constraints, initial indexes and Row-Level Security policies.
+relationships, integrity constraints, indexes and Row-Level Security policies.
 
 ## Entity-relationship diagram
 
@@ -183,19 +183,22 @@ writing outside Django. They are not repeated in the table below.
 in the database must be declared in a model or be one of the four composite foreign
 keys listed in the test, and the other way round.
 
-## Initial indexes
+## Indexes
 
-These are a first proposal. They will be validated with `EXPLAIN ANALYZE` against
-realistic seed data in phase 8.
+Proposed with the schema and reviewed in phase 8 with `EXPLAIN ANALYZE` on 200,000
+tickets: one index was added (the last row of the table) and the rest were kept. The
+measurements, and what was tried and left out, are in
+[Analytics: Performance](analytics.md#performance).
 
 Django indexes every foreign key by default. `ticket.organization_id` and
 `ticket.assignee_id` have no index of their own: `UNIQUE (organization_id, number)` and
 `(assignee_id, status)` start with those columns and serve the same lookups. The same
 applies to `ticket_id` in `ticket_comment` and `ticket_event`, covered by their
 `(ticket_id, created_at)` indexes, and in `sla_alert`, covered by its unique
-`(ticket_id, kind, level)` index. To review in phase 8: `business_hours` has both the
-automatic B-tree index on `calendar_id` and the GiST index of its exclusion constraint,
-which also starts with `calendar_id`.
+`(ticket_id, kind, level)` index. `business_hours` keeps the automatic B-tree index on
+`calendar_id` next to the GiST index of its exclusion constraint, which also starts with
+`calendar_id`: the GiST operator class only compares `bigint` with `bigint`, and Django
+sends the id as an `integer`, so only the B-tree serves that lookup.
 
 | Index | Supports |
 |---|---|
@@ -205,9 +208,10 @@ which also starts with `calendar_id`.
 | `ticket (first_response_due_at) WHERE first_response_at IS NULL` | Same, for the first-response SLA. |
 | `ticket (resolution_warning_at) WHERE status IN ('new', 'open')` and `ticket (first_response_warning_at) WHERE first_response_at IS NULL` | The same partial conditions, for the warning alerts. |
 | `ticket (resolved_at, id) WHERE status = 'resolved'` | Auto-close job: resolved tickets past the client's window, read in batches with keyset pagination on `(resolved_at, id)`. Partial because closed tickets accumulate forever while resolved ones are few. |
-| `ticket (created_at)` | Monthly aggregations in the dashboard. |
+| `ticket (created_at)` | Staff ticket list, newest first, and the category trends of the dashboard. |
 | `ticket_comment (ticket_id, created_at)` | Ordered comment thread. |
 | `ticket_event (ticket_id, created_at)` | Ticket history. |
+| `ticket_event (organization_id, created_at)` | A client's whole history, which the daily backlog of the dashboard reads (added in phase 8, created concurrently). |
 
 ## Database roles and table privileges
 
