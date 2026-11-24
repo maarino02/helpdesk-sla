@@ -6,6 +6,10 @@ from django.db.backends.signals import connection_created
 
 
 def _set_app_role(sender=None, connection=connection, **kwargs):
+    # Only the application's connection: the "owner" alias is the owner, as in
+    # production, where it logs in as helpdesk_owner (e.g. seed_demo --reset).
+    if connection.alias != "default":
+        return
     with connection.cursor() as cursor:
         cursor.execute("SET ROLE helpdesk_app")
 
