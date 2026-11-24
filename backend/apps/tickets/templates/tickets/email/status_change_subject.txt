@@ -1,0 +1,1 @@
+{% autoescape off %}[{{ ticket.reference }}] {% if status == "pending" %}Necesitamos más información{% elif status == "resolved" %}Incidencia resuelta{% else %}Incidencia cerrada{% endif %}: {{ ticket.title }}{% endautoescape %}

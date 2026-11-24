@@ -162,6 +162,13 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
+# Email: EMAIL_URL as smtp+tls://user:password@host:587 in production (phase 10);
+# consolemail:// prints to the worker log. Tests use locmem (pytest-django).
+vars().update(env.email_url("EMAIL_URL", default="consolemail://"))
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="HelpDesk SLA <no-reply@localhost>")
+# Without a timeout, an SMTP server that stops answering blocks the worker forever.
+EMAIL_TIMEOUT = 10  # seconds
+
 # Resolved tickets the client neither confirms nor reopens are closed after this
 # much calendar time (not business time: it is the client's window to react).
 AUTO_CLOSE_AFTER = timedelta(days=7)

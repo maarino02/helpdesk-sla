@@ -33,3 +33,8 @@ CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"
 
 # Hashing passwords with PBKDF2 is deliberately slow; tests create many users.
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+# In-memory broker: tasks enqueued after a real commit (production_like tests)
+# must not reach the development Redis, where a worker would run them against
+# the development database. Tests run task functions directly instead.
+CELERY_BROKER_URL = "memory://"

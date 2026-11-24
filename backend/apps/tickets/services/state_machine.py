@@ -16,6 +16,11 @@ from apps.sla.business_time import add_business_minutes, business_minutes_betwee
 from apps.sla.services import load_organization_schedule
 from apps.tickets.models import PAUSED_STATUSES, EventType, Status, Ticket, TicketEvent
 from apps.tickets.services.deadlines import refresh_warnings
+from apps.tickets.services.notifications import (
+    NOTIFIED_STATUSES,
+    STATUS_CHANGE,
+    notify_on_commit,
+)
 
 # Background jobs act with no user (actor=None).
 SYSTEM = "system"
@@ -102,7 +107,7 @@ def transition(ticket: Ticket, to_status: str, actor, *, now: datetime | None = 
         locked.status = to_status
         locked.save(update_fields=[*changed, "status", "updated_at"])
 
-        TicketEvent.objects.create(
+        event = TicketEvent.objects.create(
             ticket=locked,
             organization_id=locked.organization_id,
             actor=actor,
@@ -110,6 +115,10 @@ def transition(ticket: Ticket, to_status: str, actor, *, now: datetime | None = 
             from_value=from_status,
             to_value=to_status,
         )
+        if to_status in NOTIFIED_STATUSES:
+            # Registered on the outermost transaction: sent only if the whole
+            # operation (e.g. the request) commits.
+            notify_on_commit(STATUS_CHANGE, event.pk)
     return locked
 
 

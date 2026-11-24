@@ -1,0 +1,1 @@
+{% autoescape off %}[{{ ticket.reference }}] {% if breached %}SLA incumplido{% else %}SLA en riesgo{% endif %} ({{ kind.label|lower }}): {{ ticket.title }}{% endautoescape %}

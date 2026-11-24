@@ -1,0 +1,9 @@
+{% autoescape off %}Hola, {{ recipient.full_name }}:
+
+{% if breached %}La incidencia {{ ticket.reference }} ("{{ ticket.title }}") ha superado su plazo de {{ kind.label|lower }}, que vencía el {{ due_at }} ({{ time_zone }}).
+{% else %}La incidencia {{ ticket.reference }} ("{{ ticket.title }}") ha consumido el 80 % de su plazo de {{ kind.label|lower }}, que vence el {{ due_at }} ({{ time_zone }}).
+{% endif %}{% if as_admin %}
+Recibes este aviso como administrador porque la incidencia no tiene un asignado activo.
+{% endif %}
+HelpDesk SLA
+{% endautoescape %}
