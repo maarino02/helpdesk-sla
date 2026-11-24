@@ -100,3 +100,8 @@ All transitions go through a single service function,
 The transitions table lives in code rather than in the database: it is explicit,
 needs no extra dependency and can be tested exhaustively with a parametrized test over
 every status pair and role.
+
+`allowed_transitions(ticket, actor)` lists the transitions the actor may perform from
+the ticket's current status by asking the same check, and the API returns it with each
+ticket (`allowed_transitions`), so the web shows only the buttons `transition()` would
+accept, without a copy of the table in JavaScript.

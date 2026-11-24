@@ -5,6 +5,7 @@ validated data to a service. Output serializers are read-only and list their
 fields explicitly, so nothing new leaks when a model gains a field.
 """
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.accounts.models import Role, User
@@ -12,6 +13,8 @@ from apps.organizations.models import Organization
 from apps.sla.models import Priority
 from apps.tickets.models import Category, EventType, Status, Ticket, TicketComment, TicketEvent
 from apps.tickets.selectors import ASSIGNEE_ME, ASSIGNEE_NONE
+from apps.tickets.services.deadlines import sla_state
+from apps.tickets.services.state_machine import allowed_transitions
 
 
 class UserSummarySerializer(serializers.ModelSerializer):
@@ -38,13 +41,18 @@ class CategorySerializer(serializers.ModelSerializer):
 
 
 class TicketListSerializer(serializers.ModelSerializer):
-    """A ticket in the list: everything but the description, which can be long."""
+    """A ticket in the list: everything but the description, which can be long.
+
+    sla_state is judged at one instant for the whole response, taken the first
+    time it is needed and kept in the context (shared by every ticket of a list).
+    """
 
     reference = serializers.CharField(read_only=True)
     organization = OrganizationSummarySerializer(read_only=True)
     category = CategorySerializer(read_only=True)
     requester = UserSummarySerializer(read_only=True)
     assignee = UserSummarySerializer(read_only=True, allow_null=True)
+    sla_state = serializers.SerializerMethodField()
 
     class Meta:
         model = Ticket
@@ -59,6 +67,7 @@ class TicketListSerializer(serializers.ModelSerializer):
             "category",
             "requester",
             "assignee",
+            "sla_state",
             "first_response_due_at",
             "resolution_due_at",
             "first_response_at",
@@ -69,13 +78,28 @@ class TicketListSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = fields
 
+    def get_sla_state(self, ticket):
+        # Not setdefault("now", timezone.now()): its argument would read the clock
+        # for every ticket, even though only the first value is kept.
+        if "now" not in self.context:
+            self.context["now"] = timezone.now()
+        return sla_state(ticket, self.context["now"])
+
 
 class TicketSerializer(TicketListSerializer):
-    """One ticket in full."""
+    """One ticket in full, with what the requesting user may do with its status.
+
+    Needs the request in the context (allowed_transitions depends on the user).
+    """
+
+    allowed_transitions = serializers.SerializerMethodField()
 
     class Meta(TicketListSerializer.Meta):
-        fields = [*TicketListSerializer.Meta.fields, "description"]
+        fields = [*TicketListSerializer.Meta.fields, "description", "allowed_transitions"]
         read_only_fields = fields
+
+    def get_allowed_transitions(self, ticket):
+        return allowed_transitions(ticket, self.context["request"].user)
 
 
 class TicketCreateSerializer(serializers.Serializer):

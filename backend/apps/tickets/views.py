@@ -61,7 +61,7 @@ class TicketListCreateView(generics.ListCreateAPIView):
         serializer.is_valid(raise_exception=True)
         ticket = create_ticket(requester=request.user, **serializer.validated_data)
         return Response(
-            TicketSerializer(ticket).data,
+            TicketSerializer(ticket, context=self.get_serializer_context()).data,
             status=status.HTTP_201_CREATED,
             headers={"Location": reverse("tickets:detail", args=[ticket.pk])},
         )
@@ -94,7 +94,7 @@ class TicketDetailView(generics.RetrieveUpdateAPIView):
         # service), while "assignee": null unassigns.
         update_ticket(ticket, request.user, **serializer.validated_data)
         updated = self.get_queryset().get(pk=ticket.pk)
-        return Response(TicketSerializer(updated).data)
+        return Response(TicketSerializer(updated, context=self.get_serializer_context()).data)
 
 
 class TicketTransitionView(generics.GenericAPIView):
@@ -118,7 +118,7 @@ class TicketTransitionView(generics.GenericAPIView):
         # Read again through the selector: one query with every relation the
         # response shows, instead of one lazy query per relation.
         updated = self.get_queryset().get(pk=ticket.pk)
-        return Response(TicketSerializer(updated).data)
+        return Response(TicketSerializer(updated, context=self.get_serializer_context()).data)
 
 
 class CategoryListView(generics.ListAPIView):
