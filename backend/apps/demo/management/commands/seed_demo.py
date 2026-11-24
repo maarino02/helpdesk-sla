@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from apps.demo import reset
 from apps.demo.catalog import CLIENTS, STAFF_DOMAIN
+from apps.demo.plan import DEFAULT_MONTHS
 from apps.demo.seed import DataAlreadyExists, seed_demo
 
 
@@ -30,13 +31,28 @@ class Command(BaseCommand):
             default=1,
             help="Random seed. The data also depends on the current time: history ends now.",
         )
+        parser.add_argument(
+            "--months", type=int, default=DEFAULT_MONTHS, help="Months of history (default 6)."
+        )
+        parser.add_argument(
+            "--clients",
+            type=int,
+            default=0,
+            help="Numbered clients to add to the three demo ones (volume seeds).",
+        )
+        parser.add_argument(
+            "--bulk",
+            action="store_true",
+            help="Write the history in batches instead of through the services: the same "
+            "data, for volumes the services would take hours to write.",
+        )
 
     def handle(self, *args, **options):
         password = settings.DEMO_PASSWORD
         if not password:
             raise CommandError("Set DEMO_PASSWORD: every demo account uses it.")
-        if options["tickets"] < 0:
-            raise CommandError("--tickets cannot be negative.")
+        if min(options["tickets"], options["clients"]) < 0 or options["months"] < 1:
+            raise CommandError("--tickets and --clients must be 0 or more, --months 1 or more.")
 
         if options["reset"]:
             if "owner" not in settings.DATABASES:
@@ -47,12 +63,25 @@ class Command(BaseCommand):
             self.stdout.write("Deleted the existing data.")
 
         started = time.monotonic()
+        total = options["tickets"]
+
+        def progress(done):
+            # Everything runs in one transaction: other sessions see nothing until
+            # the end, so this is the only sign of life.
+            self.stdout.write(f"  {done}/{total} tickets ({time.monotonic() - started:.0f} s)")
+
+        how = "in batches" if options["bulk"] else "through the services"
+        self.stdout.write(f"Writing {total} tickets {how}...")
         try:
             summary = seed_demo(
                 password=password,
-                tickets=options["tickets"],
+                tickets=total,
                 seed=options["seed"],
                 now=timezone.now(),
+                months=options["months"],
+                extra_clients=options["clients"],
+                bulk=options["bulk"],
+                progress=progress,
             )
         except DataAlreadyExists:
             raise CommandError(

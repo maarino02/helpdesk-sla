@@ -147,6 +147,12 @@ CLIENTS = {
 }
 
 
+# Volume seeds (phase 8 measurements) add numbered clients, cycling through the
+# calendars, each with a few users, and one more agent for every few clients.
+EXTRA_CLIENT_USERS = 3
+EXTRA_CLIENTS_PER_AGENT = 4
+
+
 @dataclass
 class Catalog:
     """What the history generator needs from the catalog."""
@@ -172,20 +178,29 @@ def holiday_date(rule: tuple, year: int) -> datetime.date:
     return nth_weekday(year, month, weekday, n)
 
 
-def create_catalog(*, password_hash: str, years: range) -> Catalog:
+def create_catalog(*, password_hash: str, years: range, extra_clients: int = 0) -> Catalog:
     """Create the catalog. Needs a context that may write every table (system).
 
     password_hash: every user gets the same one, hashed once by the caller
     (hashing per user would take ~0.3 s each). years: the years that get
-    holidays, so the history and the coming months have them.
+    holidays, so the history and the coming months have them. extra_clients:
+    numbered clients for a volume seed, besides the three demo ones.
     """
     calendars = {key: _create_calendar(spec, years) for key, spec in CALENDARS.items()}
+    calendar_cycle = list(calendars.values())
 
     organizations = [
         Organization.objects.create(
             name=spec["name"], slug=spec["slug"], business_calendar=calendars[spec["calendar"]]
         )
         for spec in ORGANIZATIONS
+    ] + [
+        Organization.objects.create(
+            name=f"Cliente {i:03}",
+            slug=f"cliente-{i:03}",
+            business_calendar=calendar_cycle[i % len(calendar_cycle)],
+        )
+        for i in range(1, extra_clients + 1)
     ]
     by_slug = {organization.slug: organization for organization in organizations}
 
@@ -226,9 +241,28 @@ def create_catalog(*, password_hash: str, years: range) -> Catalog:
             )
             for local, name, role, active in STAFF
         ]
+        + [
+            User(
+                email=f"agente{i:02}@{STAFF_DOMAIN}",
+                full_name=f"Agente {i:02}",
+                role=Role.AGENT,
+                is_active=True,
+                password=password_hash,
+            )
+            for i in range(1, extra_clients // EXTRA_CLIENTS_PER_AGENT + 1)
+        ]
     )
+    people_by_slug = {
+        **CLIENTS,
+        **{
+            organization.slug: [
+                (f"contacto{i}", f"Contacto {i}", True) for i in range(1, EXTRA_CLIENT_USERS + 1)
+            ]
+            for organization in organizations[len(ORGANIZATIONS) :]
+        },
+    }
     clients = {}
-    for slug, people in CLIENTS.items():
+    for slug, people in people_by_slug.items():
         organization = by_slug[slug]
         clients[organization.pk] = User.objects.bulk_create(
             [

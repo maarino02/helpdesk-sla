@@ -14,12 +14,15 @@ from apps.accounts.models import Role
 from apps.demo.catalog import create_catalog
 from apps.demo.plan import (
     COMMENT,
-    HISTORY,
+    DEFAULT_MONTHS,
     LAST_TICKET_BEFORE_RETIRING,
     RETIRED_BEFORE_NOW,
     TRANSITION,
+    UPDATE,
+    history,
 )
-from apps.demo.seed import plan_for
+from apps.demo.seed import load_world, plan_for
+from apps.sla.business_time import business_minutes_between
 from apps.tickets.models import Status
 
 pytestmark = pytest.mark.django_db
@@ -29,11 +32,11 @@ NOW = dt.datetime(2026, 11, 24, 12, 0, tzinfo=dt.UTC)
 
 @pytest.fixture
 def catalog():
-    return create_catalog(password_hash=make_password(None), years=range(2025, 2028))
+    return create_catalog(password_hash=make_password(None), years=range(2024, 2028))
 
 
-def plan(catalog, count=200, seed=1, now=NOW):
-    return plan_for(catalog, count=count, seed=seed, now=now)
+def plan(catalog, count=200, seed=1, now=NOW, months=DEFAULT_MONTHS):
+    return list(plan_for(catalog, count=count, seed=seed, now=now, months=months))
 
 
 def fingerprint(plans):
@@ -55,13 +58,42 @@ def test_tickets_arrive_oldest_first_within_the_last_six_months(catalog):
     created = [p.created_at for p in plans]
     assert len(plans) == 200
     assert created == sorted(created)
-    assert created[0] >= NOW - HISTORY and created[-1] <= NOW
+    assert created[0] >= NOW - history(DEFAULT_MONTHS) and created[-1] <= NOW
+
+
+def test_months_set_the_period(catalog):
+    created = [p.created_at for p in plan(catalog, months=24)]
+
+    assert NOW - history(24) <= created[0] < NOW - history(23)
+
+
+def test_activating_people_while_planning_does_not_change_the_plan(catalog):
+    # The plan is a generator and the replay activates the retired people and
+    # categories while it consumes it: the planner must not see that.
+    expected = fingerprint(plan(catalog))
+    lazy = plan_for(catalog, count=200, seed=1, now=NOW)
+    next(lazy)
+    for item in [*catalog.agents, *catalog.categories, *sum(catalog.clients.values(), [])]:
+        item.is_active = True
+
+    assert fingerprint([*plan(catalog)[:1], *lazy]) == expected
 
 
 def test_tickets_are_shared_among_clients(catalog):
     counts = Counter(p.organization.slug for p in plan(catalog))
 
     assert counts == {"alameda": 90, "pacifico": 70, "vallebueno": 40}
+
+
+def test_extra_clients_have_a_long_tail():
+    catalog = create_catalog(
+        password_hash=make_password(None), years=range(2024, 2028), extra_clients=20
+    )
+    counts = Counter(p.organization.slug for p in plan(catalog, count=4000))
+
+    assert counts.total() == 4000
+    # The first extra clients are the big ones; the last ones get a few tickets.
+    assert counts["cliente-001"] > 3 * counts["cliente-020"] > 0
 
 
 def test_steps_are_in_order_and_never_in_the_future(catalog):
@@ -113,3 +145,20 @@ def test_auto_close_has_no_actor_and_comes_seven_days_after_resolving(catalog):
     for resolved, closed in closings:
         assert resolved.status == Status.RESOLVED
         assert dt.timedelta(days=7) < closed.at - resolved.at <= dt.timedelta(days=7, hours=1)
+
+
+def test_priority_changes_only_before_the_resolution_deadline(catalog):
+    # bulk.py relies on it (it does not copy the breached-deadline case).
+    world = load_world(catalog)
+    changes = [
+        (p, step)
+        for p in plan(catalog, count=600)
+        for step in p.steps
+        if step.kind == UPDATE and "priority" in step.changes
+    ]
+
+    assert changes
+    for p, step in changes:
+        schedule = world.schedules[p.organization.pk]
+        _, target = world.targets[(p.organization.pk, p.priority)]
+        assert business_minutes_between(p.created_at, step.at, schedule) < target

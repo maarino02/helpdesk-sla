@@ -21,7 +21,7 @@ from apps.sla.business_time import add_business_minutes, business_minutes_betwee
 from apps.sla.models import Priority
 from apps.tickets.models import Status
 
-HISTORY = dt.timedelta(days=182)
+DEFAULT_MONTHS = 6
 # People and categories that are inactive in the catalog were active until this
 # long before `now`: older tickets may use them, newer ones cannot.
 RETIRED_BEFORE_NOW = dt.timedelta(days=90)
@@ -31,6 +31,11 @@ AUTO_CLOSE_AFTER = dt.timedelta(days=7)  # the auto-close job's setting
 
 # Share of the tickets per client slug, and of the priorities.
 ORGANIZATION_SHARE = {"alameda": 0.45, "pacifico": 0.35, "vallebueno": 0.20}
+# The extra clients of a volume seed: a few big ones and a long tail of small ones,
+# as real client bases are (and the planner's statistics should see). The k-th
+# extra client (from 0) weighs EXTRA_SHARE / (k + 1) ** EXTRA_SKEW.
+EXTRA_SHARE = 0.6
+EXTRA_SKEW = 0.7
 PRIORITY_WEIGHTS = {Priority.CRITICAL: 5, Priority.HIGH: 20, Priority.MEDIUM: 50, Priority.LOW: 25}
 PRIORITY_ORDER = [Priority.LOW, Priority.MEDIUM, Priority.HIGH, Priority.CRITICAL]
 
@@ -89,35 +94,65 @@ class TicketPlan:
     steps: list[Step]
 
 
-def plan_history(catalog, schedules, targets, *, count: int, seed: int, now: dt.datetime):
-    """Plans for `count` tickets created over the last six months, oldest first.
+def history(months: int) -> dt.timedelta:
+    return dt.timedelta(days=round(months * 365.25 / 12))
+
+
+def plan_history(
+    catalog,
+    schedules,
+    targets,
+    *,
+    count: int,
+    seed: int,
+    now: dt.datetime,
+    months: int = DEFAULT_MONTHS,
+):
+    """Plans for `count` tickets created over the last `months`, oldest first.
+
+    A generator: a volume seed never holds every step in memory. The arrivals
+    are drawn first, all at once (they must be sorted), and each ticket's story
+    when it is consumed; the random sequence is the same either way.
 
     schedules: organization id -> Schedule. targets: (organization id, priority) ->
     (first response, resolution) business minutes of the policy that applies.
     """
-    return _Planner(catalog, schedules, targets, random.Random(seed), now).plan(count)
+    planner = _Planner(catalog, schedules, targets, random.Random(seed), now, history(months))
+    return planner.plan(count)
 
 
 class _Planner:
-    def __init__(self, catalog, schedules, targets, rng, now):
+    def __init__(self, catalog, schedules, targets, rng, now, period):
         self.catalog = catalog
         self.schedules = schedules
         self.targets = targets
         self.rng = rng
         self.now = now
-        self.start = now - HISTORY
+        self.start = now - period
         self.retire_at = now - RETIRED_BEFORE_NOW
+        # Read now, not while planning: the plans are generated lazily, and the
+        # replay activates these people and categories while it runs.
+        self.retired = {
+            (type(item), item.pk)
+            for item in [
+                *catalog.agents,
+                *(user for users in catalog.clients.values() for user in users),
+                *catalog.categories,
+            ]
+            if not item.is_active
+        }
 
-    def plan(self, count: int) -> list[TicketPlan]:
+    def plan(self, count: int):
         arrivals = []
         organizations = self.catalog.organizations
-        shares = [ORGANIZATION_SHARE[organization.slug] for organization in organizations]
+        shares = _shares(organizations)
         for organization, n in zip(organizations, _split(count, shares), strict=True):
             arrivals += [(at, organization) for at in self._arrivals(organization, n)]
         # Oldest first: creation takes the next number of the client, so numbers
         # and creation times end up in the same order.
         arrivals.sort(key=lambda arrival: arrival[0])
-        return [self._ticket(organization, at) for at, organization in arrivals]
+        for at, organization in arrivals:
+            yield self._ticket(organization, at)
 
     # When tickets arrive
 
@@ -179,6 +214,9 @@ class _Planner:
         comment(at, agent, texts.FIRST_RESPONSES)
 
         if rng.random() < CHANCE["raise_priority_or_lower"]:
+            # Always before the resolution deadline: the latest first response
+            # (FIRST_RESPONSE_LATE) plus 30 minutes is shorter than every
+            # resolution target. bulk.py relies on it (test_plan.py checks it).
             at = business(at, rng.randint(5, 30))
             steps.append(Step(at, UPDATE, agent, changes={"priority": self._other(priority)}))
         if rng.random() < CHANCE["reassign"]:
@@ -259,7 +297,9 @@ class _Planner:
     def _eligible(self, candidates, at: dt.datetime):
         """Inactive people and categories only before they were retired."""
         cutoff = self.retire_at - LAST_TICKET_BEFORE_RETIRING
-        return [item for item in candidates if item.is_active or at < cutoff]
+        return [
+            item for item in candidates if (type(item), item.pk) not in self.retired or at < cutoff
+        ]
 
     def _staff(self, at: dt.datetime, besides=None):
         if self.rng.random() < CHANCE["admin_takes_it"] and besides is not self.catalog.admin:
@@ -272,6 +312,20 @@ class _Planner:
         i = PRIORITY_ORDER.index(priority)
         up = i + 1 < len(PRIORITY_ORDER) and (i == 0 or self.rng.random() < 0.7)
         return PRIORITY_ORDER[i + 1 if up else i - 1]
+
+
+def _shares(organizations) -> list[float]:
+    """Each client's share of the tickets, adding up to 1."""
+    weights = []
+    extra = 0
+    for organization in organizations:
+        if organization.slug in ORGANIZATION_SHARE:
+            weights.append(ORGANIZATION_SHARE[organization.slug])
+        else:
+            weights.append(EXTRA_SHARE / (extra + 1) ** EXTRA_SKEW)
+            extra += 1
+    total = sum(weights)
+    return [weight / total for weight in weights]
 
 
 def _split(total: int, shares: list[float]) -> list[int]:

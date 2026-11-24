@@ -147,7 +147,25 @@ through the real services with each planned instant as `now` (`replay.py`), so
 deadlines, pauses, business minutes and events are computed as in production. Nobody
 is notified, and the SLA alerts due at the end are raised once. Options:
 `make seed ARGS="--tickets 300 --seed 2"`. The default 1500 tickets take about 2.5
-minutes from Windows (each query crosses the Docker Desktop network).
+minutes from Windows (each query crosses the Docker Desktop network); progress is
+printed as it goes, since everything is one transaction and other sessions see
+nothing until the end.
+
+For volume (query plans, indexes), `--bulk` writes the same plan in batches
+(`bulk.py`): the step effects are computed in Python with the services' pure
+functions and inserted with `INSERT ... SELECT FROM unnest(...)`, one statement per
+table and batch (`COPY FROM` is not allowed on tables with row-level security).
+`test_bulk.py` replays one plan both ways and requires identical rows, so a change to
+a service fails it until `bulk.py` follows.
+
+```sh
+make seed ARGS="--reset --bulk --clients 40 --months 24 --tickets 200000"
+```
+
+That is about 2 minutes: 43 clients (the extra ones with a long tail of sizes),
+200,000 tickets, 1.15 million events and 640,000 comments (~390 MB with indexes).
+Run `ANALYZE` afterwards (`make psql`): the application role cannot, and until
+autovacuum gets to it the planner has no statistics for the new rows.
 
 It refuses to run if there are clients, calendars, policies or categories already.
 `make seed ARGS=--reset` empties every business table first with `TRUNCATE` on the

@@ -37,15 +37,23 @@ WHERE ticket.id = latest.ticket_id
 """
 
 
-def replay(plans, catalog, *, now: dt.datetime) -> int:
-    """Run the plans in order and return the number of SLA alerts raised at `now`."""
+PROGRESS_EVERY = 100  # tickets
+
+
+def replay(plans, catalog, *, now: dt.datetime, progress=None) -> int:
+    """Run the plans in order and return the number of SLA alerts raised at `now`.
+
+    progress(done): called every PROGRESS_EVERY tickets.
+    """
     retirees = _retirees(catalog)
     # Active during the replay: creation rejects an inactive requester or category,
     # and assignment an inactive agent. The plan only gives them tickets from
     # before they left, so deactivating them at the end is enough.
     _set_active(retirees, True)
-    for plan in plans:
+    for done, plan in enumerate(plans, start=1):
         _replay_ticket(plan)
+        if progress and done % PROGRESS_EVERY == 0:
+            progress(done)
     _set_active(retirees, False)
 
     with connection.cursor() as cursor:
