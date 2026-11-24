@@ -32,7 +32,7 @@ def owner():
 
 
 def seed(**options):
-    call_command("seed_demo", stdout=io.StringIO(), **options)
+    call_command("seed_demo", tickets=5, stdout=io.StringIO(), **options)
 
 
 def user_ids():

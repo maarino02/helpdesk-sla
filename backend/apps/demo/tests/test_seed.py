@@ -1,4 +1,4 @@
-"""seed_demo without --reset: the catalog and the checks before writing.
+"""seed_demo without --reset and without tickets: the catalog and the checks before writing.
 
 --reset needs a second connection (the owner) and real commits:
 backend/tests/test_seed_reset.py.
@@ -34,7 +34,8 @@ def _demo_password(settings):
 
 
 def seed():
-    call_command("seed_demo", stdout=io.StringIO())
+    # The catalog only: the history has its own tests (test_history.py).
+    call_command("seed_demo", tickets=0, stdout=io.StringIO())
 
 
 def organization(slug):

@@ -138,8 +138,16 @@ shell or with SQL leaves those deadlines computed with the old calendar.
 ### Demo data
 
 `make seed` fills an empty database with three clients (calendars in Madrid, Mexico
-City and 24x7), their SLA agreements, categories, agents and client users. The demo
-accounts are printed at the end; all of them use `DEMO_PASSWORD`.
+City and 24x7), their SLA agreements, categories, agents and client users, and six
+months of tickets up to now. The demo accounts are printed at the end; all of them use
+`DEMO_PASSWORD`.
+
+The history is planned first (`apps/demo/plan.py`, no database) and then replayed
+through the real services with each planned instant as `now` (`replay.py`), so
+deadlines, pauses, business minutes and events are computed as in production. Nobody
+is notified, and the SLA alerts due at the end are raised once. Options:
+`make seed ARGS="--tickets 300 --seed 2"`. The default 1500 tickets take about 2.5
+minutes from Windows (each query crosses the Docker Desktop network).
 
 It refuses to run if there are clients, calendars, policies or categories already.
 `make seed ARGS=--reset` empties every business table first with `TRUNCATE` on the
