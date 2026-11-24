@@ -12,4 +12,5 @@ urlpatterns = [
         views.OpenTicketAgingView.as_view(),
         name="open-ticket-aging",
     ),
+    path("analytics/agent-workload/", views.AgentWorkloadView.as_view(), name="agent-workload"),
 ]

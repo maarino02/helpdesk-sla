@@ -8,6 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.permissions import IsStaff
 from apps.analytics.period import read_organization, read_period
 from apps.analytics.queries import run
 from apps.sla.models import Priority
@@ -52,6 +53,23 @@ class ResponseTimesView(PerPriorityView):
     """Median and p90 of the first response and resolution times, in business minutes."""
 
     query = "response_times"
+
+
+class AgentWorkloadView(MetricView):
+    """Open work now and output over the period, per staff member. Staff only.
+
+    Mixes a snapshot (the open tickets) with the period (the resolutions), so the
+    response carries both the instant and the period.
+    """
+
+    query = "agent_workload"
+    permission_classes = [IsAuthenticated, IsStaff]
+
+    def get(self, request):
+        period = read_period(request)
+        now = timezone.now()
+        rows = run(self.query, {**period.params(), "now": now})
+        return Response({"as_of": now, "period": period.describe(), "results": rows})
 
 
 class SnapshotView(APIView):

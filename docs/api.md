@@ -51,6 +51,7 @@ curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 | `GET /api/analytics/sla-compliance/` | Any user | SLA compliance per month and priority. See [Analytics](#analytics). |
 | `GET /api/analytics/response-times/` | Any user | Median and p90 response and resolution times per month and priority. |
 | `GET /api/analytics/open-ticket-aging/` | Any user | Open tickets by age right now, with how many have breached their SLA. |
+| `GET /api/analytics/agent-workload/` | Agent, admin | Open work now and resolutions over the period, per staff member. |
 
 "Any user" means any authenticated user, but only for the tickets they may see: clients
 see every ticket of their organization, agents and admins see all of them. A ticket the
@@ -259,6 +260,42 @@ youngest first, empty buckets included:
   paused before its deadline is not breached.
 - `first_response_overdue`: not answered yet and past the deadline. A late first
   response that has already happened is counted by SLA compliance instead.
+
+### Agent workload
+
+`GET /api/analytics/agent-workload/`: staff only (a client gets `403`). It takes the
+usual parameters, and mixes two kinds of figures, so the response carries both the
+instant and the period:
+
+```json
+{
+  "as_of": "2026-11-24T12:00:00Z",
+  "period": {"start": "2026-11-01", "end": "2026-11-30", "organization": null,
+             "time_zone": "Europe/Madrid"},
+  "results": [
+    {"agent_id": 7, "full_name": "Lucía Gómez", "role": "agent", "is_active": true,
+     "open_tickets": 3, "pending": 1, "open_breached": 1,
+     "resolved": 12, "resolution_median": 240.0, "resolved_late": 2},
+    ...
+    {"agent_id": null, "full_name": null, "role": null, "is_active": null,
+     "open_tickets": 4, "pending": 0, "open_breached": 0,
+     "resolved": 0, "resolution_median": null, "resolved_late": 0}
+  ]
+}
+```
+
+- `open_tickets`, `pending` and `open_breached` are a snapshot at `as_of`, whatever the
+  period: tickets `new`, `open` or `pending` assigned to the person, and those whose
+  resolution deadline came before the clock stopped (as in open ticket aging).
+- `resolved`, `resolution_median` (business minutes) and `resolved_late` cover the
+  tickets resolved in the period. Late means at or after the deadline, as in SLA
+  compliance.
+- A ticket counts for its current assignee. Who resolved it is in the ticket history.
+- Every active agent and admin is listed, with zeros if they have nothing (also when
+  `organization` narrows the figures to one client). Deactivated users appear only while
+  they still hold tickets. Tickets without an assignee have their own row, `agent_id:
+  null`, always last; the rows add up to the totals of the other metrics.
+- Busiest first (most open tickets), then by name.
 
 ## Pagination
 

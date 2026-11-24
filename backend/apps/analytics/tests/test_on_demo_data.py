@@ -84,3 +84,26 @@ def test_aging_counts_every_open_ticket_once(seeded):
     open_work = Ticket.objects.filter(status__in=["new", "open", "pending"])
     assert sum(row["tickets"] for row in rows) == open_work.count() > 0
     assert sum(row["pending"] for row in rows) == open_work.filter(status="pending").count()
+
+
+def test_agent_workload_matches_the_tickets_per_assignee(seeded):
+    params = PERIOD.params()
+    rows = run("agent_workload", {**params, "now": NOW})
+    by_agent = {row["agent_id"]: row for row in rows}
+
+    open_work = Ticket.objects.filter(status__in=["new", "open", "pending"])
+    resolved = Ticket.objects.filter(
+        resolved_at__gte=params["start"], resolved_at__lt=params["end"]
+    )
+    # Every ticket in exactly one row: the rows add up to the totals.
+    assert sum(row["open_tickets"] for row in rows) == open_work.count() > 0
+    assert sum(row["resolved"] for row in rows) == resolved.count() > 0
+    # And in the right one.
+    minutes = defaultdict(list)
+    for assignee, spent in resolved.values_list("assignee_id", "resolution_business_minutes"):
+        minutes[assignee].append(spent)
+    for assignee, spent in minutes.items():
+        assert by_agent[assignee]["resolved"] == len(spent)
+        assert by_agent[assignee]["resolution_median"] == round(statistics.median(spent), 1)
+    for assignee in open_work.values_list("assignee_id", flat=True).distinct():
+        assert by_agent[assignee]["open_tickets"] == open_work.filter(assignee_id=assignee).count()
