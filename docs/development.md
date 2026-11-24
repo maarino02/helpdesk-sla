@@ -199,6 +199,35 @@ curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 In development (`DEBUG`), opening an endpoint in the browser shows Django REST
 Framework's browsable API; it needs a token like any other client.
 
+Every response carries a Content-Security-Policy header (`CONTENT_SECURITY_POLICY` in
+`config/settings/base.py`, [ADR-0006](adr/0006-browser-tokens-refresh-cookie.md)): the
+browser runs only the site's own JavaScript and CSS files. Pages never use inline
+`<script>` code, `style="..."` attributes, `onclick` handlers or resources from other
+sites; data goes into the page with `textContent`. The browsable API has a few style
+attributes that the browser ignores, a cosmetic loss in development only.
+
+## Web pages
+
+The frontend lives in `backend/apps/web`: plain HTML, CSS and JavaScript modules, no
+build step. Each page is a template that only lays out the screen and loads one module
+from `static/web/js/pages/`; the data comes from the API with the user's token.
+
+- `api.js` keeps the access token in memory and renews it with the refresh cookie
+  ([ADR-0006](adr/0006-browser-tokens-refresh-cookie.md)). Every request goes through
+  its `api()`, which retries once after a `401` and goes to the login page when there
+  is no session. `layout.js` starts a page that needs a session.
+- Pages with a session start with `<main hidden>` and show it once `/api/me/` answers.
+- Data goes into the page with `textContent`, never `innerHTML`, and there is no inline
+  code (Content-Security-Policy, see [Using the API](#using-the-api)).
+- Imports between modules are relative and end with `;`, the form collectstatic
+  rewrites to the hashed file names in production (`apps/core/storage.py`).
+- Page views use no database: they are `non_atomic_requests` and their tests run
+  without database access.
+
+`apps/web/tests/test_pages.py` checks these rules. The scripts themselves are checked by
+hand in the browser: log in with a demo account (`make seed`) at
+<http://127.0.0.1:8000/login/>.
+
 ## Tests
 
 `make test` needs `make up`. pytest-django creates `test_helpdesk` as
@@ -304,4 +333,5 @@ explicit decision.
 | `A durable atomic block cannot be nested` | `system_context()` used inside a request or another transaction. |
 | 429 on login | Login throttling. Wait a minute, or locally clear the cache database: `docker compose exec redis redis-cli -n 1 FLUSHDB`. |
 | No email after a status change or an alert | With the default `EMAIL_URL=consolemail://` emails are printed in the worker log: check that a worker is running. The requester is not told about their own changes, and only `pending`, `resolved` and `closed` are notified. |
+| A script or style does not apply; the browser console mentions Content Security Policy | Inline code: move it to a file under `static/`. `apps/core/tests/test_csp.py` checks the admin pages the same way. |
 | Compose fails with `required variable ... is missing` | A required variable is not in `.env`; compare it with `.env.example`. |

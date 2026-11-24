@@ -1,0 +1,33 @@
+{% load static %}<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} · HelpDesk SLA</title>
+  <link rel="stylesheet" href="{% static 'web/css/base.css' %}">
+  {# Modules run after the document is parsed, like defer: no DOMContentLoaded needed. #}
+  <script type="module" src="{% block script %}{% endblock %}"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{% url 'web:home' %}">HelpDesk SLA</a>
+    {% block navigation %}
+    <nav class="topnav" aria-label="Principal">
+      <a href="{% url 'web:home' %}">Inicio</a>
+    </nav>
+    {# Filled in and shown by layout.js once the session is known. #}
+    <div class="account" data-account hidden>
+      <span data-user-name></span>
+      <button type="button" class="link-button" data-logout>Cerrar sesión</button>
+    </div>
+    {% endblock %}
+  </header>
+
+  <p class="page-error" role="alert" data-page-error hidden></p>
+
+  {# Pages that need a session start hidden, so nothing shows before it is checked. #}
+  <main id="main" {% block main_attributes %}hidden{% endblock %}>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

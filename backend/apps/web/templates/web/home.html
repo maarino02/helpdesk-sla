@@ -1,0 +1,19 @@
+{% extends "web/base.html" %}
+{% load static %}
+
+{% block title %}Inicio{% endblock %}
+{% block script %}{% static 'web/js/pages/home.js' %}{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h1>Hola, <span data-user-first-name></span></h1>
+  <dl class="facts">
+    <dt>Email</dt>
+    <dd data-user-email></dd>
+    <dt>Rol</dt>
+    <dd data-user-role></dd>
+    <dt>Organización</dt>
+    <dd data-user-organization></dd>
+  </dl>
+</section>
+{% endblock %}

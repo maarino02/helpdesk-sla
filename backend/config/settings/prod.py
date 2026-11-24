@@ -31,9 +31,10 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS
 
 # Static files: compressed copies plus a content hash in each file name
 # (base.css -> base.6f2a1c.css), so browsers can cache them forever and still
-# pick up changes. Requires collectstatic, which runs when building the image;
+# pick up changes; imports between JavaScript modules are rewritten too (see
+# apps/core/storage.py). Requires collectstatic, which runs when building the image;
 # kept out of dev and test so they work without it.
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    "staticfiles": {"BACKEND": "apps.core.storage.StaticFilesStorage"},
 }

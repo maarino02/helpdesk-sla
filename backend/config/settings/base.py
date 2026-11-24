@@ -45,10 +45,13 @@ INSTALLED_APPS = [
     "apps.tickets",
     "apps.demo",
     "apps.analytics",
+    "apps.web",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Before WhiteNoise, so static responses get the header too.
+    "apps.core.middleware.ContentSecurityPolicyMiddleware",
     # Serves static files from the application itself, with no separate web
     # server. Right after SecurityMiddleware so static responses still get the
     # security headers, and before everything else to skip unneeded work.
@@ -189,6 +192,28 @@ DEMO_PASSWORD = env("DEMO_PASSWORD", default="")
 # would get a 301 and fail. Defined here so tests exercise the real value.
 SECURE_REDIRECT_EXEMPT = [r"^health/"]
 
+# Only the site's own scripts, styles, images and API (ADR-0006). No 'unsafe-inline'
+# or 'unsafe-eval': the pages load their JavaScript and CSS from files and draw
+# user data with textContent. object-src and base-uri close two ways around
+# script-src (plugins, and a <base> tag redirecting relative script URLs);
+# frame-ancestors forbids framing, as X-Frame-Options does for older browsers.
+# Known cost, development only: DRF's browsable API has a few style="..."
+# attributes, which the browser ignores.
+CONTENT_SECURITY_POLICY = "; ".join(
+    [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "img-src 'self'",
+        "connect-src 'self'",
+        "font-src 'self'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    ]
+)
+
 # Authentication
 AUTH_USER_MODEL = "accounts.User"
 
@@ -242,6 +267,13 @@ SIMPLE_JWT = {
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
 }
+
+# Browser sessions (ADR-0006): the page keeps the access token in memory and the
+# refresh token travels in this cookie, sent only to the /api/auth/session/ views.
+REFRESH_COOKIE_NAME = "helpdesk_refresh"
+REFRESH_COOKIE_PATH = "/api/auth/session/"
+# HTTPS only. dev.py turns it off: the development server is plain HTTP.
+REFRESH_COOKIE_SECURE = True
 
 # Internationalization
 # Timestamps are always stored and handled in UTC. Each client's time zone is only

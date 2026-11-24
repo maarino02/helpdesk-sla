@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -296,10 +296,16 @@ class TestDeadlineRecalculation:
         assert not TicketEvent.objects.filter(event_type=EventType.SLA_RECALCULATED).exists()
 
 
-def test_changing_the_time_zone_moves_open_deadlines(admin_client):
+def test_changing_the_time_zone_moves_open_deadlines(admin_client, monkeypatch):
     # The time zone is saved by save_model itself, before the inlines: the
     # snapshot must be taken before it. Office hours in Madrid become office hours
     # in New York, six hours later.
+    # A fixed instant: between 14:00 and 17:00 UTC both offices are open, and 960
+    # business minutes from then end at the same instant in both (each loses the
+    # same hours at night), so the deadline would rightly not move. Monday 10:00
+    # UTC: Madrid is open, New York is not; due Tuesday 17:00 or 21:00 UTC.
+    monday = datetime(2026, 11, 23, 10, 0, tzinfo=UTC)
+    monkeypatch.setattr("django.utils.timezone.now", lambda: monday)
     calendar = BusinessCalendarFactory(timezone="Europe/Madrid")
     for weekday in range(5):
         BusinessHoursFactory(calendar=calendar, weekday=weekday)
@@ -317,5 +323,7 @@ def test_changing_the_time_zone_moves_open_deadlines(admin_client):
 
     admin_client.post(reverse("admin:sla_businesscalendar_change", args=[calendar.pk]), data)
 
-    assert Ticket.objects.get(pk=ticket.pk).resolution_due_at != ticket.resolution_due_at
+    assert ticket.resolution_due_at == datetime(2026, 11, 24, 17, 0, tzinfo=UTC)
+    moved = Ticket.objects.get(pk=ticket.pk).resolution_due_at
+    assert moved == datetime(2026, 11, 24, 21, 0, tzinfo=UTC)
     assert TicketEvent.objects.filter(ticket=ticket, event_type=EventType.SLA_RECALCULATED).exists()
