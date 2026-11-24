@@ -19,3 +19,6 @@ REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = [
 ]
 
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+
+# Accounts created by make seed (documented in the README).
+DEMO_PASSWORD = env("DEMO_PASSWORD", default="demo1234")
