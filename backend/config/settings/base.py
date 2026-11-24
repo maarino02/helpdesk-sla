@@ -49,6 +49,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Before WhiteNoise, so static responses get the header too.
+    "apps.core.middleware.ContentSecurityPolicyMiddleware",
     # Serves static files from the application itself, with no separate web
     # server. Right after SecurityMiddleware so static responses still get the
     # security headers, and before everything else to skip unneeded work.
@@ -188,6 +190,28 @@ DEMO_PASSWORD = env("DEMO_PASSWORD", default="")
 # the TLS proxy in between. When SECURE_SSL_REDIRECT is on (production), they
 # would get a 301 and fail. Defined here so tests exercise the real value.
 SECURE_REDIRECT_EXEMPT = [r"^health/"]
+
+# Only the site's own scripts, styles, images and API (ADR-0006). No 'unsafe-inline'
+# or 'unsafe-eval': the pages load their JavaScript and CSS from files and draw
+# user data with textContent. object-src and base-uri close two ways around
+# script-src (plugins, and a <base> tag redirecting relative script URLs);
+# frame-ancestors forbids framing, as X-Frame-Options does for older browsers.
+# Known cost, development only: DRF's browsable API has a few style="..."
+# attributes, which the browser ignores.
+CONTENT_SECURITY_POLICY = "; ".join(
+    [
+        "default-src 'self'",
+        "script-src 'self'",
+        "style-src 'self'",
+        "img-src 'self'",
+        "connect-src 'self'",
+        "font-src 'self'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    ]
+)
 
 # Authentication
 AUTH_USER_MODEL = "accounts.User"

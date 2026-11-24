@@ -1,5 +1,6 @@
-"""One transaction around each admin request, rendering included."""
+"""One transaction around each admin request, and the Content-Security-Policy header."""
 
+from django.conf import settings
 from django.db import transaction
 from django.urls import NoReverseMatch, reverse
 
@@ -36,3 +37,28 @@ class AdminRlsMiddleware:
             return self.get_response(request)
         with transaction.atomic():
             return self.get_response(request)
+
+
+class ContentSecurityPolicyMiddleware:
+    """Send settings.CONTENT_SECURITY_POLICY with every response (ADR-0006).
+
+    The browser then runs only scripts and styles served by the site itself: no
+    inline <script>, no style="..." attributes, nothing from other origins. An
+    injected script tag would not run, which is what keeps the access token the
+    page holds in memory out of reach of an XSS flaw.
+
+    Every response gets it, JSON and static files included: harmless there, and a
+    page served from any URL is covered without having to remember it. A view
+    that needs another policy can set its own header; it is not overwritten.
+    Goes right after SecurityMiddleware, before WhiteNoise, which answers static
+    requests without calling the middleware below it.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self.policy = settings.CONTENT_SECURITY_POLICY
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        response.headers.setdefault("Content-Security-Policy", self.policy)
+        return response
