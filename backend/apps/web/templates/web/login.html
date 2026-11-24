@@ -1,0 +1,24 @@
+{% extends "web/base.html" %}
+{% load static %}
+
+{% block title %}Iniciar sesión{% endblock %}
+{% block script %}{% static 'web/js/pages/login.js' %}{% endblock %}
+{% block navigation %}{% endblock %}
+{% block main_attributes %}class="narrow"{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h1>Iniciar sesión</h1>
+  {# method="post": if the script failed, the browser must not put the password in the URL. #}
+  <form id="login-form" method="post" novalidate>
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="username" required autofocus>
+
+    <label for="password">Contraseña</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+
+    <p class="form-error" role="alert" data-form-error hidden></p>
+    <button type="submit" class="button">Entrar</button>
+  </form>
+</section>
+{% endblock %}

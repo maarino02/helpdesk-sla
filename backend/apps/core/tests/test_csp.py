@@ -1,7 +1,5 @@
 """The Content-Security-Policy header (ADR-0006) and the pages that must work with it."""
 
-from html.parser import HTMLParser
-
 import pytest
 from django.conf import settings
 from django.core.management import call_command
@@ -9,6 +7,7 @@ from django.http import HttpResponse
 from django.test import RequestFactory
 
 from apps.core.middleware import ContentSecurityPolicyMiddleware
+from apps.core.tests.html import inline_code
 
 HEADER = "Content-Security-Policy"
 
@@ -62,30 +61,6 @@ def test_a_views_own_policy_is_kept():
     response = ContentSecurityPolicyMiddleware(view)(RequestFactory().get("/"))
 
     assert response[HEADER] == "default-src 'none'"
-
-
-class InlineCode(HTMLParser):
-    """What the policy would block: inline scripts and style attributes."""
-
-    def __init__(self):
-        super().__init__()
-        self.scripts = []
-        self.styles = []
-
-    def handle_starttag(self, tag, attrs):
-        attrs = dict(attrs)
-        if "style" in attrs:
-            self.styles.append(tag)
-        # A script runs inline unless it has src or a data type such as JSON.
-        runs = attrs.get("type", "text/javascript") in ("text/javascript", "module")
-        if tag == "script" and "src" not in attrs and runs:
-            self.scripts.append(attrs.get("id", "?"))
-
-
-def inline_code(html):
-    parser = InlineCode()
-    parser.feed(html)
-    return parser.scripts, parser.styles
 
 
 def test_the_checker_finds_inline_code():

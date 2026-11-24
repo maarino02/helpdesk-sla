@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "apps.tickets",
     "apps.demo",
     "apps.analytics",
+    "apps.web",
 ]
 
 MIDDLEWARE = [
