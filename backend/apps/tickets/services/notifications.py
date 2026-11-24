@@ -18,6 +18,9 @@ is lost. A transactional outbox (a table written in the same transaction and
 drained by a job) would close the second gap.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -43,6 +46,23 @@ KINDS = (STATUS_CHANGE, SLA_ALERT)
 # (pending), give them a chance to react (resolved) or end the ticket (closed).
 NOTIFIED_STATUSES = frozenset({Status.PENDING, Status.RESOLVED, Status.CLOSED})
 
+# A ContextVar, not a module flag: it only applies to the code running inside
+# suppressed(), not to other threads of the same worker or server.
+_suppressed: ContextVar[bool] = ContextVar("notifications_suppressed", default=False)
+
+
+@contextmanager
+def suppressed() -> Iterator[None]:
+    """Enqueue no notification for the changes made inside this block.
+
+    For writing past history (the demo seed), which nobody must be emailed about.
+    """
+    token = _suppressed.set(True)
+    try:
+        yield
+    finally:
+        _suppressed.reset(token)
+
 
 def notify_on_commit(kind: str, source_id: int) -> None:
     """Enqueue the notification once the current transaction commits.
@@ -53,6 +73,10 @@ def notify_on_commit(kind: str, source_id: int) -> None:
     """
     if kind not in KINDS:
         raise ValueError(f"Unknown notification kind {kind!r}.")
+    # Checked now, not in enqueue(): the commit may happen after the block ends,
+    # for example when an outer transaction wraps it.
+    if _suppressed.get():
+        return
 
     def enqueue():
         # Imported here: tasks imports the services, which import this module.
