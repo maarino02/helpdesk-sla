@@ -212,11 +212,23 @@ The frontend lives in `backend/apps/web`: plain HTML, CSS and JavaScript modules
 build step. Each page is a template that only lays out the screen and loads one module
 from `static/web/js/pages/`; the data comes from the API with the user's token.
 
+| Page | Module | For |
+|---|---|---|
+| `/login/` | `login.js` | Everyone |
+| `/` | `tickets.js` | The ticket list, with filters kept in the URL |
+| `/tickets/new/` | `ticket_new.js` | Clients open a ticket |
+| `/tickets/{id}/` | `ticket.js` | One ticket: status buttons from `allowed_transitions`, triage for staff, conversation (internal notes for staff) and history |
+
 - `api.js` keeps the access token in memory and renews it with the refresh cookie
   ([ADR-0006](adr/0006-browser-tokens-refresh-cookie.md)). Every request goes through
   its `api()`, which retries once after a `401` and goes to the login page when there
   is no session. `layout.js` starts a page that needs a session.
 - Pages with a session start with `<main hidden>` and show it once `/api/me/` answers.
+- Elements for some roles only carry `data-roles="agent admin"`; `layout.js` shows them
+  to those roles. Presentation only: the API decides what each role may do.
+- Spanish labels for the API's codes (statuses, priorities, SLA states) are in
+  `labels.js`, checked against the Django choices; `dom.js` builds elements without
+  parsing HTML.
 - Data goes into the page with `textContent`, never `innerHTML`, and there is no inline
   code (Content-Security-Policy, see [Using the API](#using-the-api)).
 - Imports between modules are relative and end with `;`, the form collectstatic

@@ -1,0 +1,44 @@
+{% extends "web/base.html" %}
+{% load static %}
+
+{% block title %}Nuevo ticket{% endblock %}
+{% block script %}{% static 'web/js/pages/ticket_new.js' %}{% endblock %}
+
+{% block content %}
+<section class="card form-card">
+  <h1>Nuevo ticket</h1>
+
+  {# Shown to staff instead of the form: only clients open tickets. #}
+  <p class="notice" data-roles="agent admin" hidden>
+    Los tickets los abren los clientes. Desde el listado puedes atender los existentes.
+  </p>
+
+  <form id="ticket-form" method="post" novalidate data-roles="client" hidden>
+    <label for="title">Título</label>
+    <input id="title" name="title" maxlength="{{ title_max_length }}" required>
+    <p class="field-error" data-error-for="title" hidden></p>
+
+    <label for="description">Descripción</label>
+    <textarea id="description" name="description" rows="8" required></textarea>
+    <p class="field-error" data-error-for="description" hidden></p>
+
+    <div class="form-row">
+      <div>
+        <label for="category">Categoría</label>
+        <select id="category" name="category" required>
+          <option value="">Elige una categoría</option>
+        </select>
+        <p class="field-error" data-error-for="category" hidden></p>
+      </div>
+      <div>
+        <label for="priority">Prioridad</label>
+        <select id="priority" name="priority" required></select>
+        <p class="field-error" data-error-for="priority" hidden></p>
+      </div>
+    </div>
+
+    <p class="form-error" role="alert" data-form-error hidden></p>
+    <button type="submit" class="button">Crear ticket</button>
+  </form>
+</section>
+{% endblock %}

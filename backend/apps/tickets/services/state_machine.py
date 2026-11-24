@@ -123,6 +123,24 @@ def transition(ticket: Ticket, to_status: str, actor, *, now: datetime | None = 
     return locked
 
 
+def allowed_transitions(ticket: Ticket, actor) -> list[str]:
+    """The statuses `actor` may move the ticket to now, in the table's order.
+
+    Asks _check() itself, so the web offers exactly the transitions that
+    transition() would accept: the rules stay in one place.
+    """
+    allowed = []
+    for from_status, to_status in TRANSITIONS:
+        if from_status != ticket.status:
+            continue
+        try:
+            _check(ticket, from_status, to_status, actor)
+        except TransitionNotAllowed:
+            continue
+        allowed.append(to_status)
+    return allowed
+
+
 def _check(ticket: Ticket, from_status: str, to_status: str, actor) -> None:
     allowed = TRANSITIONS.get((from_status, to_status))
     if allowed is None:

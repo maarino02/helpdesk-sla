@@ -20,6 +20,11 @@ export async function startPage() {
     throw new Error("No session information");
   }
   document.querySelector("[data-user-name]").textContent = user.full_name;
+  // Elements for some roles only: data-roles="agent admin". Presentation only: the
+  // API decides what each role may do.
+  for (const node of document.querySelectorAll("[data-roles]")) {
+    node.hidden = !node.dataset.roles.split(" ").includes(user.role);
+  }
   document.querySelector("[data-account]").hidden = false;
   document.querySelector("[data-logout]").addEventListener("click", async () => {
     try {

@@ -10,10 +10,11 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="{% url 'web:home' %}">HelpDesk SLA</a>
+    <a class="brand" href="{% url 'web:tickets' %}">HelpDesk SLA</a>
     {% block navigation %}
     <nav class="topnav" aria-label="Principal">
-      <a href="{% url 'web:home' %}">Inicio</a>
+      <a href="{% url 'web:tickets' %}">Tickets</a>
+      <a href="{% url 'web:ticket-new' %}" data-roles="client" hidden>Nuevo ticket</a>
     </nav>
     {# Filled in and shown by layout.js once the session is known. #}
     <div class="account" data-account hidden>

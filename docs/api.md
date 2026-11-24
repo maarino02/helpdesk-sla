@@ -60,6 +60,7 @@ curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 | `POST /api/tickets/{id}/comments/` | Any user | `{"body": ..., "is_internal": false}`; `201` with the comment. |
 | `GET /api/tickets/{id}/events/` | Any user | The ticket history, oldest first. |
 | `GET /api/categories/` | Any user | Active categories, to fill the creation form. Not paginated. |
+| `GET /api/staff/` | Agents, admins | Active agents and admins by name, `{id, full_name, role}`: whom a ticket can be assigned to. Not paginated. |
 | `GET /api/analytics/sla-compliance/` | Any user | SLA compliance per month and priority. See [Analytics](#analytics). |
 | `GET /api/analytics/response-times/` | Any user | Median and p90 response and resolution times per month and priority. |
 | `GET /api/analytics/open-ticket-aging/` | Any user | Open tickets by age right now, with how many have breached their SLA. |
@@ -118,19 +119,37 @@ filtered.
   "category": {"id": 2, "name": "Correo"},
   "requester": {"id": 15, "full_name": "Ana López"},
   "assignee": {"id": 4, "full_name": "Luis Pérez"},
+  "sla_state": "at_risk",
   "first_response_due_at": "2026-11-23T11:00:00Z",
   "resolution_due_at": "2026-11-23T18:00:00Z",
   "first_response_at": "2026-11-23T10:25:00Z",
   "resolved_at": null,
   "closed_at": null,
   "created_at": "2026-11-23T10:00:00Z",
-  "updated_at": "2026-11-23T10:25:00Z"
+  "updated_at": "2026-11-23T10:25:00Z",
+  "allowed_transitions": ["pending", "resolved"]
 }
 ```
 
 `reference` is the per-client number clients see. People appear only as `id` and
 `full_name`. Deadlines already include every pause of the SLA clock (see
-[ADR-0002](adr/0002-sla-business-time-stored-due-dates.md)).
+[ADR-0002](adr/0002-sla-business-time-stored-due-dates.md)). The list shows the same
+fields except `description` and `allowed_transitions`.
+
+`sla_state` is where the ticket stands against its SLA when the response is built, one
+instant for the whole response, with the rules of the alert job and the dashboard:
+
+| Value | Meaning |
+|---|---|
+| `on_track` | Nothing due yet. |
+| `at_risk` | A warning instant has come: the first response is still missing, or the resolution clock is running (`new`, `open`), and less than 20 % of its time is left. |
+| `paused` | `pending`, waiting for the client, with no breach. |
+| `breached` | A deadline came first: unanswered or answered at or after the first response deadline, or not resolved before the resolution deadline (for a pending ticket, before its clock stopped). A breach stays. |
+| `met` | Resolved or closed with both deadlines met. |
+
+`allowed_transitions` (detail, and the answers of `PATCH`, transitions and creation)
+lists the statuses the requesting user may move the ticket to now, from the state
+machine itself: the transitions endpoint accepts exactly these.
 
 ### Create
 

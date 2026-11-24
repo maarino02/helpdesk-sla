@@ -58,3 +58,12 @@ class MeSerializer(serializers.ModelSerializer):
         model = User
         fields = ["id", "email", "full_name", "role", "organization"]
         read_only_fields = fields
+
+
+class StaffMemberSerializer(serializers.ModelSerializer):
+    """Someone a ticket can be assigned to. No email: the name is enough to choose."""
+
+    class Meta:
+        model = User
+        fields = ["id", "full_name", "role"]
+        read_only_fields = fields

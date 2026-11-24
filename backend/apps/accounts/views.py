@@ -1,14 +1,21 @@
 from django.conf import settings
-from rest_framework import status
+from rest_framework import generics, status
 from rest_framework.exceptions import AuthenticationFailed, UnsupportedMediaType
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from apps.accounts.serializers import LoginSerializer, MeSerializer, RefreshSerializer
+from apps.accounts.models import Role, User
+from apps.accounts.permissions import IsStaff
+from apps.accounts.serializers import (
+    LoginSerializer,
+    MeSerializer,
+    RefreshSerializer,
+    StaffMemberSerializer,
+)
 
 
 class LoginView(TokenObtainPairView):
@@ -35,6 +42,21 @@ class MeView(APIView):
 
     def get(self, request):
         return Response(MeSerializer(request.user).data)
+
+
+class StaffListView(generics.ListAPIView):
+    """The active agents and admins, by name: whom a ticket can be assigned to.
+
+    Staff only (a client has nothing to assign). Not paginated: the support team
+    is small, and the select needs every name.
+    """
+
+    permission_classes = [IsAuthenticated, IsStaff]
+    serializer_class = StaffMemberSerializer
+    pagination_class = None
+    queryset = User.objects.filter(role__in=[Role.AGENT, Role.ADMIN], is_active=True).order_by(
+        "full_name", "id"
+    )
 
 
 class SessionView(APIView):

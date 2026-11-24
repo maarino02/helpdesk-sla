@@ -12,4 +12,5 @@ urlpatterns = [
     path("auth/session/refresh/", views.SessionRefreshView.as_view(), name="session-refresh"),
     path("auth/session/logout/", views.SessionLogoutView.as_view(), name="session-logout"),
     path("me/", views.MeView.as_view(), name="me"),
+    path("staff/", views.StaffListView.as_view(), name="staff"),
 ]

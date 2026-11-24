@@ -1,0 +1,50 @@
+{% extends "web/base.html" %}
+{% load static %}
+
+{% block title %}Tickets{% endblock %}
+{% block script %}{% static 'web/js/pages/tickets.js' %}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Tickets</h1>
+  <a class="button" href="{% url 'web:ticket-new' %}" data-roles="client" hidden>Nuevo ticket</a>
+</div>
+
+{# The options come from labels.js and /api/staff/; the values, from the URL. #}
+<form class="filters" id="filters">
+  <label>Estado
+    <select name="status"><option value="">Todos</option></select>
+  </label>
+  <label>Prioridad
+    <select name="priority"><option value="">Todas</option></select>
+  </label>
+  <label data-roles="agent admin" hidden>Asignado
+    <select name="assignee">
+      <option value="">Todos</option>
+      <option value="me">Míos</option>
+      <option value="none">Sin asignar</option>
+    </select>
+  </label>
+</form>
+
+<div class="table-wrap">
+  <table class="tickets">
+    <thead>
+      <tr>
+        <th>Referencia</th>
+        <th>Título</th>
+        <th>Estado</th>
+        <th>Prioridad</th>
+        <th>SLA</th>
+        <th data-roles="agent admin" hidden>Cliente</th>
+        <th data-roles="agent admin" hidden>Asignado</th>
+        <th>Creado</th>
+      </tr>
+    </thead>
+    <tbody id="ticket-rows"></tbody>
+  </table>
+</div>
+
+<p class="empty" id="empty" hidden>No hay tickets con estos filtros.</p>
+<button type="button" class="button secondary" id="more" hidden>Cargar más</button>
+{% endblock %}
