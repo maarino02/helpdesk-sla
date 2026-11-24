@@ -5,7 +5,7 @@
 Multi-tenant helpdesk with SLA tracking in business hours, built with Django,
 PostgreSQL Row-Level Security and Celery.
 
-> **Status:** in development. Phase 6 (background jobs) is complete; phase 7 (demo data) is next. See the [roadmap](#roadmap).
+> **Status:** in development. Phase 7 (demo data) is complete; phase 8 (analytics) is next. See the [roadmap](#roadmap).
 
 ## Overview
 
@@ -30,6 +30,8 @@ A background process watches those deadlines and raises alerts before they are b
 - Background alerts when a ticket is about to breach its SLA, or has breached it
 - Automatic closing of resolved tickets the client does not reopen within 7 days
 - Email notifications to the requester and to the support team
+- Demo data: three clients with different calendars and months of realistic ticket
+  history generated through the real services, plus a bulk mode for volume
 - Analytics dashboard built on hand-written SQL: SLA compliance, response and resolution
   times, ticket aging, agent workload and category trends
 
@@ -53,7 +55,7 @@ A background process watches those deadlines and raises alerts before they are b
 - [x] **Phase 4 - Tickets API:** CRUD, state transitions, comments and event history
 - [x] **Phase 5 - SLA engine:** business-time calculation, holidays and pauses
 - [x] **Phase 6 - Background jobs:** SLA alerts, auto-close and email notifications with Celery
-- [ ] **Phase 7 - Demo data:** realistic seed data and demo accounts
+- [x] **Phase 7 - Demo data:** realistic seed data and demo accounts
 - [ ] **Phase 8 - Analytics:** SQL dashboard queries, indexes and query plans
 - [ ] **Phase 9 - Frontend:** ticket views and dashboard with Chart.js
 - [ ] **Phase 10 - Release:** deployment, screenshots and live demo
@@ -112,9 +114,12 @@ uv sync                      # create .venv with all dependencies
 uv run pre-commit install    # run ruff before each commit
 make up                      # start only PostgreSQL and Redis
 make migrate                 # as helpdesk_owner
-uv run backend/manage.py createsuperuser
+make seed                    # demo clients, accounts and ticket history (~2.5 min)
 make run                     # http://127.0.0.1:8000 (admin at /admin/)
 ```
+
+`make seed` prints the demo accounts when it finishes (see [Demo data](#demo-data)). To
+start from an empty database instead, run `uv run backend/manage.py createsuperuser`.
 
 If you need background tasks, start `make worker` and `make beat` in other terminals.
 Do not run them while `make up-app` is running: two workers would share the queue and
@@ -124,6 +129,7 @@ two beat schedulers would send every periodic task twice.
 
 | Command                 | Description                                              |
 |-------------------------|----------------------------------------------------------|
+| `make seed`             | Fill an empty database with demo data (`ARGS=--reset` to empty it first) |
 | `make test`             | Run the test suite against PostgreSQL (needs `make up`)  |
 | `make lint`             | Check linting and formatting with ruff, as CI does       |
 | `make format`           | Apply ruff autofixes and format the code                 |
@@ -149,6 +155,25 @@ hour, resolved tickets older than 7 days are closed through the state machine. S
 changes and alerts send emails, enqueued only after the transaction commits. Schedules,
 idempotency and delivery guarantees are in [Background jobs](docs/background-jobs.md).
 
+### Demo data
+
+Three fictitious client companies with support calendars in Madrid, Mexico City and
+24x7, their SLA agreements, the support team, and six months of tickets up to now: a
+mix of breached and met SLAs, pauses, reopenings and auto-closed tickets, generated
+through the same services as real requests. Every account uses the password in
+`DEMO_PASSWORD` (`demo1234` in development):
+
+| Account | Role |
+|---|---|
+| `admin@soporte.example` | Admin (also Django admin) |
+| `agente@soporte.example` | Agent |
+| `cliente@alameda.example` | Client (Ferretería Alameda) |
+| `cliente@pacifico.example` | Client (Transportes del Pacífico) |
+| `cliente@vallebueno.example` | Client (Clínica Vallebueno) |
+
+How the history is generated, the bulk mode for 200,000 tickets and why a reset never
+reuses ids are in [Demo data](docs/demo-data.md).
+
 ## Documentation
 
 - [Development guide](docs/development.md): configuration, database roles, working
@@ -158,6 +183,8 @@ idempotency and delivery guarantees are in [Background jobs](docs/background-job
   computed and how they move
 - [Background jobs](docs/background-jobs.md): SLA alerts, auto-close and email
   notifications: schedules, idempotency and delivery guarantees
+- [Demo data](docs/demo-data.md): demo accounts, the catalog, how the history is
+  planned and written (through the services or in bulk), resetting and volume
 - [Data model](docs/data-model.md): ER diagram, constraints, indexes and RLS policies
 - [Ticket state machine](docs/state-machine.md): states, transitions and permissions
 - Architecture decision records:

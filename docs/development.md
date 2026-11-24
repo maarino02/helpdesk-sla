@@ -137,41 +137,21 @@ shell or with SQL leaves those deadlines computed with the old calendar.
 
 ### Demo data
 
-`make seed` fills an empty database with three clients (calendars in Madrid, Mexico
-City and 24x7), their SLA agreements, categories, agents and client users, and six
-months of tickets up to now. The demo accounts are printed at the end; all of them use
-`DEMO_PASSWORD`.
-
-The history is planned first (`apps/demo/plan.py`, no database) and then replayed
-through the real services with each planned instant as `now` (`replay.py`), so
-deadlines, pauses, business minutes and events are computed as in production. Nobody
-is notified, and the SLA alerts due at the end are raised once. Options:
-`make seed ARGS="--tickets 300 --seed 2"`. The default 1500 tickets take about 2.5
-minutes from Windows (each query crosses the Docker Desktop network); progress is
-printed as it goes, since everything is one transaction and other sessions see
-nothing until the end.
-
-For volume (query plans, indexes), `--bulk` writes the same plan in batches
-(`bulk.py`): the step effects are computed in Python with the services' pure
-functions and inserted with `INSERT ... SELECT FROM unnest(...)`, one statement per
-table and batch (`COPY FROM` is not allowed on tables with row-level security).
-`test_bulk.py` replays one plan both ways and requires identical rows, so a change to
-a service fails it until `bulk.py` follows.
-
 ```sh
-make seed ARGS="--reset --bulk --clients 40 --months 24 --tickets 200000"
+make seed                                    # empty database: demo clients, accounts, 6 months
+make seed ARGS=--reset                       # delete everything first, users included
+make seed ARGS="--tickets 300 --seed 2"      # fewer tickets, another random seed
+make seed ARGS="--reset --bulk --clients 40 --months 24 --tickets 200000"  # volume
 ```
 
-That is about 2 minutes: 43 clients (the extra ones with a long tail of sizes),
-200,000 tickets, 1.15 million events and 640,000 comments (~390 MB with indexes).
-Run `ANALYZE` afterwards (`make psql`): the application role cannot, and until
-autovacuum gets to it the planner has no statistics for the new rows.
+What it creates, the demo accounts, how the history is planned and written, and why
+`--reset` keeps ids growing are in [Demo data](demo-data.md). Two practical points:
 
-It refuses to run if there are clients, calendars, policies or categories already.
-`make seed ARGS=--reset` empties every business table first with `TRUNCATE` on the
-owner's connection, **including every user and superuser**. Ids are not restarted: a
-token issued before the reset names its user by id, and that id must not belong to
-somebody else afterwards.
+- The default 1,500 tickets go through the services and take about 2.5 minutes from
+  Windows. Everything is one transaction, so other sessions see nothing until the end;
+  the progress lines are the sign that it is working.
+- After a volume seed, run `ANALYZE` in `make psql` before measuring queries: the
+  application role cannot, and the planner has no statistics for the new rows yet.
 
 ### SQL console
 
