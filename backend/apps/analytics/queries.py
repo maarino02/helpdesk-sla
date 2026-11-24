@@ -2,7 +2,7 @@
 
 Each query is a plain SQL file, readable and runnable in psql as it is (with the
 parameters filled in). Parameters are named, psycopg style: %(start)s. A literal
-percent sign in a query must be written %%.
+percent sign must be written %%, in comments too: psycopg formats the whole text.
 
 The queries run on the request's connection, inside its transaction and with its
 row-level security context, like any ORM query: a client's query only sees that

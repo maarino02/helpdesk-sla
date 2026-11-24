@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 
 from apps.analytics.period import read_period
 from apps.analytics.queries import run
+from apps.sla.models import Priority
 
 
 class MetricView(APIView):
@@ -24,4 +25,19 @@ class MetricView(APIView):
 
     def get(self, request):
         period = read_period(request)
-        return Response({"period": period.describe(), "results": run(self.query, period.params())})
+        rows = run(self.query, {**period.params(), **self.extra_params()})
+        return Response({"period": period.describe(), "results": rows})
+
+    def extra_params(self) -> dict:
+        """Parameters of this query besides the period's."""
+        return {}
+
+
+class SlaComplianceView(MetricView):
+    """First responses and resolutions within their deadline, per month and priority."""
+
+    query = "sla_compliance"
+
+    def extra_params(self):
+        # From the code, not repeated in the SQL: one list of priorities.
+        return {"priorities": list(Priority.values)}
