@@ -204,6 +204,11 @@ with care: holding `FOR UPDATE` on a row also blocks a plain `UPDATE` of it, so 
 would pass without the explicit lock; `FOR KEY SHARE` conflicts only with `FOR UPDATE`.
 Check every such test by removing the lock and watching it fail.
 
+**Celery tasks** are tested by calling the function; the test settings use an
+in-memory broker, so nothing reaches the development Redis. `on_commit` callbacks never
+run inside the default test transaction: see
+[Testing tasks](background-jobs.md#testing-tasks).
+
 **Property-based tests** (`backend/apps/sla/tests/test_business_time_properties.py`) use
 hypothesis: it generates calendars, instants and durations and checks properties that
 must always hold (adding and measuring are inverse, measuring is additive, and so on).
@@ -258,4 +263,5 @@ explicit decision.
 | `The row-level security context needs an open transaction` | `set_context` called in autocommit mode; wrap the code in `transaction.atomic()`. |
 | `A durable atomic block cannot be nested` | `system_context()` used inside a request or another transaction. |
 | 429 on login | Login throttling. Wait a minute, or locally clear the cache database: `docker compose exec redis redis-cli -n 1 FLUSHDB`. |
+| No email after a status change or an alert | With the default `EMAIL_URL=consolemail://` emails are printed in the worker log: check that a worker is running. The requester is not told about their own changes, and only `pending`, `resolved` and `closed` are notified. |
 | Compose fails with `required variable ... is missing` | A required variable is not in `.env`; compare it with `.env.example`. |

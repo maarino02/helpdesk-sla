@@ -13,6 +13,7 @@ transitions in [`state-machine.md`](state-machine.md). The code is
 - [Deadlines](#deadlines)
 - [How deadlines move](#how-deadlines-move)
 - [Measuring compliance](#measuring-compliance)
+- [Alerts](#alerts)
 
 ## Business calendars
 
@@ -97,3 +98,16 @@ The business minutes consumed are stored when they happen:
   left until the deadline at the moment of resolving. Pauses are excluded without
   storing them: they are already in the deadline. A late resolution consumes more than
   the target.
+
+## Alerts
+
+Each ticket also stores the instant at which 80 % of each deadline's business time is
+consumed (`first_response_warning_at`, `resolution_warning_at`). The budget of the
+resolution is the ticket's target; the first response clock never pauses, so its budget is
+the business time from creation to its deadline. These instants are rewritten together
+with the deadlines, in every case of the table above, and can never come after them.
+
+A job compares them with the current time every minute and records a warning (80 %
+consumed, deadline still ahead) or a breach (deadline passed) while the clock runs; a
+paused clock raises nothing. The job and its guarantees are described in
+[`background-jobs.md`](background-jobs.md#sla-alerts).
