@@ -51,6 +51,9 @@ curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 | `GET /api/analytics/sla-compliance/` | Any user | SLA compliance per month and priority. See [Analytics](#analytics). |
 | `GET /api/analytics/response-times/` | Any user | Median and p90 response and resolution times per month and priority. |
 | `GET /api/analytics/open-ticket-aging/` | Any user | Open tickets by age right now, with how many have breached their SLA. |
+| `GET /api/analytics/category-trends/` | Any user | Tickets created per month and category, with the change from the month before and the rank. |
+| `GET /api/analytics/agent-workload/` | Agent, admin | Open work now and resolutions over the period, per staff member. |
+| `GET /api/analytics/daily-backlog/` | Any user | Open tickets at the end of each day of the period, rebuilt from the ticket history. |
 
 "Any user" means any authenticated user, but only for the tickets they may see: clients
 see every ticket of their organization, agents and admins see all of them. A ticket the
@@ -259,6 +262,84 @@ youngest first, empty buckets included:
   paused before its deadline is not breached.
 - `first_response_overdue`: not answered yet and past the deadline. A late first
   response that has already happened is counted by SLA compliance instead.
+
+### Category trends
+
+`GET /api/analytics/category-trends/`: one row per month of the period and category,
+by month, then rank, then name:
+
+```json
+{"month": "2026-03-01", "category_id": 2, "category": "Acceso",
+ "tickets": 4, "previous": 2, "change": 2, "change_pct": 100.0,
+ "share": 44.4, "rank": 1}
+```
+
+- `tickets` counts the tickets created in the month under their current category (the
+  one triage settled on).
+- `previous` is the month before, also for the first month of the period, which is
+  compared with the month before it. `change_pct` is `null` when `previous` is 0:
+  growing from nothing is no percentage.
+- `share` is the percentage of the month's tickets (`null` in a month without any);
+  `rank` is the position within the month, ties sharing it and skipping the next (1, 1,
+  3).
+- Months are counted whole: a `start` on the 15th still counts its month from the 1st,
+  so that every month compares like with like.
+- Every active category is listed, with zeros where it has no tickets; inactive ones
+  only if they have tickets in those months.
+
+### Agent workload
+
+`GET /api/analytics/agent-workload/`: staff only (a client gets `403`). It takes the
+usual parameters, and mixes two kinds of figures, so the response carries both the
+instant and the period:
+
+```json
+{
+  "as_of": "2026-11-24T12:00:00Z",
+  "period": {"start": "2026-11-01", "end": "2026-11-30", "organization": null,
+             "time_zone": "Europe/Madrid"},
+  "results": [
+    {"agent_id": 7, "full_name": "Lucía Gómez", "role": "agent", "is_active": true,
+     "open_tickets": 3, "pending": 1, "open_breached": 1,
+     "resolved": 12, "resolution_median": 240.0, "resolved_late": 2},
+    ...
+    {"agent_id": null, "full_name": null, "role": null, "is_active": null,
+     "open_tickets": 4, "pending": 0, "open_breached": 0,
+     "resolved": 0, "resolution_median": null, "resolved_late": 0}
+  ]
+}
+```
+
+- `open_tickets`, `pending` and `open_breached` are a snapshot at `as_of`, whatever the
+  period: tickets `new`, `open` or `pending` assigned to the person, and those whose
+  resolution deadline came before the clock stopped (as in open ticket aging).
+- `resolved`, `resolution_median` (business minutes) and `resolved_late` cover the
+  tickets resolved in the period. Late means at or after the deadline, as in SLA
+  compliance.
+- A ticket counts for its current assignee. Who resolved it is in the ticket history.
+- Every active agent and admin is listed, with zeros if they have nothing (also when
+  `organization` narrows the figures to one client). Deactivated users appear only while
+  they still hold tickets. Tickets without an assignee have their own row, `agent_id:
+  null`, always last; the rows add up to the totals of the other metrics.
+- Busiest first (most open tickets), then by name.
+
+### Daily backlog
+
+`GET /api/analytics/daily-backlog/`: one row per day of the period up to today, oldest
+first, with the tickets open at the end of the day (today: so far). Days are those of
+the provider's time zone, and the response carries `as_of` next to the period, as in
+agent workload:
+
+```json
+{"day": "2026-11-22", "backlog": 4, "new": 1, "open": 3, "pending": 0,
+ "created": 1, "resolved": 0}
+```
+
+- `backlog` is `new + open + pending`, the work still to do; `created` and `resolved`
+  are what came in and went out that day (a ticket resolved twice counts twice).
+- The past is rebuilt from the ticket history, not read from the tickets, which only
+  know their current status: today's figures always equal the open tickets now.
+- A period ending in the future stops at today.
 
 ## Pagination
 

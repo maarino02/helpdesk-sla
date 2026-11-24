@@ -84,3 +84,70 @@ def test_aging_counts_every_open_ticket_once(seeded):
     open_work = Ticket.objects.filter(status__in=["new", "open", "pending"])
     assert sum(row["tickets"] for row in rows) == open_work.count() > 0
     assert sum(row["pending"] for row in rows) == open_work.filter(status="pending").count()
+
+
+def test_agent_workload_matches_the_tickets_per_assignee(seeded):
+    params = PERIOD.params()
+    rows = run("agent_workload", {**params, "now": NOW})
+    by_agent = {row["agent_id"]: row for row in rows}
+
+    open_work = Ticket.objects.filter(status__in=["new", "open", "pending"])
+    resolved = Ticket.objects.filter(
+        resolved_at__gte=params["start"], resolved_at__lt=params["end"]
+    )
+    # Every ticket in exactly one row: the rows add up to the totals.
+    assert sum(row["open_tickets"] for row in rows) == open_work.count() > 0
+    assert sum(row["resolved"] for row in rows) == resolved.count() > 0
+    # And in the right one.
+    minutes = defaultdict(list)
+    for assignee, spent in resolved.values_list("assignee_id", "resolution_business_minutes"):
+        minutes[assignee].append(spent)
+    for assignee, spent in minutes.items():
+        assert by_agent[assignee]["resolved"] == len(spent)
+        assert by_agent[assignee]["resolution_median"] == round(statistics.median(spent), 1)
+    for assignee in open_work.values_list("assignee_id", flat=True).distinct():
+        assert by_agent[assignee]["open_tickets"] == open_work.filter(assignee_id=assignee).count()
+
+
+def test_category_trends_count_every_created_ticket(seeded):
+    params = PERIOD.params()
+    rows = run("category_trends", params)
+    zone = PERIOD.time_zone
+
+    per_month = defaultdict(int)
+    for created_at in Ticket.objects.filter(created_at__lt=params["end"]).values_list(
+        "created_at", flat=True
+    ):
+        per_month[created_at.astimezone(zone).date().replace(day=1)] += 1
+    totals = defaultdict(int)
+    for row in rows:
+        totals[row["month"]] += row["tickets"]
+    assert sum(totals.values()) > 0
+    for month, total in totals.items():
+        assert total == per_month[month]
+    # lag() compares each month with the one before, the first month included.
+    by_cell = {(row["month"], row["category_id"]): row for row in rows}
+    for (month, category), row in by_cell.items():
+        before = (month.replace(day=1) - dt.timedelta(days=1)).replace(day=1)
+        if (before, category) in by_cell:
+            assert row["previous"] == by_cell[before, category]["tickets"]
+    # And the first month with the month before the period, not listed.
+    first = min(totals)
+    previous = sum(row["previous"] for row in rows if row["month"] == first)
+    assert previous == per_month[(first - dt.timedelta(days=1)).replace(day=1)]
+
+
+def test_daily_backlog_rebuilt_from_events_ends_at_the_current_tickets(seeded):
+    rows = run("daily_backlog", {**PERIOD.params(), "now": NOW})
+
+    today = rows[-1]
+    assert today["day"] == NOW.astimezone(PERIOD.time_zone).date()
+    current = {
+        status: Ticket.objects.filter(status=status).count()
+        for status in ("new", "open", "pending")
+    }
+    assert {status: today[status] for status in current} == current
+    assert today["backlog"] == sum(current.values()) > 0
+    # Every day of the period, and never a negative count.
+    assert len(rows) == (PERIOD.end - PERIOD.start).days + 1
+    assert all(min(row["new"], row["open"], row["pending"]) >= 0 for row in rows)
