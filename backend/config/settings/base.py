@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "apps.organizations",
     "apps.tickets",
     "apps.demo",
+    "apps.analytics",
 ]
 
 MIDDLEWARE = [
@@ -173,6 +174,10 @@ EMAIL_TIMEOUT = 10  # seconds
 # Resolved tickets the client neither confirms nor reopens are closed after this
 # much calendar time (not business time: it is the client's window to react).
 AUTO_CLOSE_AFTER = timedelta(days=7)
+
+# Days and months of the dashboard metrics: the provider's time zone, the same for
+# every client so that their figures can be added up (apps/analytics/period.py).
+ANALYTICS_TIME_ZONE = "Europe/Madrid"
 
 # Password of every account created by seed_demo. No default outside development:
 # the command refuses to run without it, so a public demo never gets a known one.
