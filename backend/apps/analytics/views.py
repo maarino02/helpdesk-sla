@@ -55,6 +55,12 @@ class ResponseTimesView(PerPriorityView):
     query = "response_times"
 
 
+class CategoryTrendsView(MetricView):
+    """Tickets created per month and category, with the change and the rank."""
+
+    query = "category_trends"
+
+
 class AgentWorkloadView(MetricView):
     """Open work now and output over the period, per staff member. Staff only.
 

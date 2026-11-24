@@ -107,3 +107,31 @@ def test_agent_workload_matches_the_tickets_per_assignee(seeded):
         assert by_agent[assignee]["resolution_median"] == round(statistics.median(spent), 1)
     for assignee in open_work.values_list("assignee_id", flat=True).distinct():
         assert by_agent[assignee]["open_tickets"] == open_work.filter(assignee_id=assignee).count()
+
+
+def test_category_trends_count_every_created_ticket(seeded):
+    params = PERIOD.params()
+    rows = run("category_trends", params)
+    zone = PERIOD.time_zone
+
+    per_month = defaultdict(int)
+    for created_at in Ticket.objects.filter(created_at__lt=params["end"]).values_list(
+        "created_at", flat=True
+    ):
+        per_month[created_at.astimezone(zone).date().replace(day=1)] += 1
+    totals = defaultdict(int)
+    for row in rows:
+        totals[row["month"]] += row["tickets"]
+    assert sum(totals.values()) > 0
+    for month, total in totals.items():
+        assert total == per_month[month]
+    # lag() compares each month with the one before, the first month included.
+    by_cell = {(row["month"], row["category_id"]): row for row in rows}
+    for (month, category), row in by_cell.items():
+        before = (month.replace(day=1) - dt.timedelta(days=1)).replace(day=1)
+        if (before, category) in by_cell:
+            assert row["previous"] == by_cell[before, category]["tickets"]
+    # And the first month with the month before the period, not listed.
+    first = min(totals)
+    previous = sum(row["previous"] for row in rows if row["month"] == first)
+    assert previous == per_month[(first - dt.timedelta(days=1)).replace(day=1)]
