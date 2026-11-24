@@ -5,12 +5,16 @@ tickets' own status does not take part.
 """
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 import pytest
+from django.db import connection
 from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.accounts.tests.factories import AgentUserFactory, ClientUserFactory
+from apps.analytics.period import Period
+from apps.analytics.queries import load
 from apps.organizations.tests.factories import OrganizationFactory
 from apps.tickets.models import EventType
 from apps.tickets.tests.factories import TicketEventFactory, TicketFactory
@@ -178,3 +182,23 @@ def test_staff_can_narrow_to_one_client_and_clients_only_see_theirs():
     assert today(get(AgentUserFactory(), organization=mine.pk)) == 1
     assert today(get(customer)) == 1
     assert get(customer, organization=theirs.pk).status_code == 403
+
+
+def test_one_client_reads_its_events_through_the_index():
+    # The whole history of a client, not of everyone: 172 -> 11 ms for the smallest
+    # client of helpdesk_bench (docs/analytics.md#performance). The index needs the
+    # explicit organization filter; row-level security alone is a filter on every
+    # row, not an index condition.
+    period = Period(dt.date(2026, 11, 20), dt.date(2026, 11, 24), 1, ZoneInfo("Europe/Madrid"))
+    with connection.cursor() as cursor:
+        cursor.execute("SET LOCAL enable_seqscan = off")  # Tables are tiny in tests.
+        cursor.execute(
+            "EXPLAIN (COSTS OFF) " + load("daily_backlog"), {**period.params(), "now": NOW}
+        )
+        plan = "\n".join(row[0] for row in cursor.fetchall())
+
+    # The name alone proves little: with seq scans off, the planner may read a whole
+    # index instead of the table. The client must be the index condition.
+    assert "ticket_event_org_created_idx" in plan, plan
+    index_conditions = [line for line in plan.splitlines() if "Index Cond:" in line]
+    assert any("organization_id = 1)" in line for line in index_conditions), plan

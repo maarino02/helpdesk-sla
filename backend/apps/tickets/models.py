@@ -400,6 +400,11 @@ class TicketEvent(models.Model):
         indexes = [
             # Ticket history in order.
             models.Index(fields=["ticket", "created_at"], name="ticket_event_ticket_idx"),
+            # One client's history by date: the daily backlog of the dashboard reads
+            # it all (docs/analytics.md#performance).
+            models.Index(
+                fields=["organization", "created_at"], name="ticket_event_org_created_idx"
+            ),
         ]
         constraints = [
             models.CheckConstraint(
