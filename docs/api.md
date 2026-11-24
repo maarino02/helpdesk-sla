@@ -49,6 +49,7 @@ curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 | `GET /api/tickets/{id}/events/` | Any user | The ticket history, oldest first. |
 | `GET /api/categories/` | Any user | Active categories, to fill the creation form. Not paginated. |
 | `GET /api/analytics/sla-compliance/` | Any user | SLA compliance per month and priority. See [Analytics](#analytics). |
+| `GET /api/analytics/response-times/` | Any user | Median and p90 response and resolution times per month and priority. |
 
 "Any user" means any authenticated user, but only for the tickets they may see: clients
 see every ticket of their organization, agents and admins see all of them. A ticket the
@@ -205,6 +206,30 @@ City counts in April. The response echoes the period used, then the rows:
   no business minutes passed after 18:00.
 - Months without outcomes come back with zero counts and `null` rates: no data is not
   0 %.
+
+### Response times
+
+`GET /api/analytics/response-times/`: the same grid of months and priorities, with the
+times in minutes:
+
+```json
+{"month": "2026-03-01", "priority": "medium",
+ "first_responses": 4, "first_response_median": 25.0, "first_response_p90": 79.0,
+ "first_response_median_wall": 150.0,
+ "resolutions": 3, "resolution_median": 200.0, "resolution_p90": 520.0,
+ "resolution_median_wall": 2000.0}
+```
+
+- `median` and `p90` are business minutes, the time the SLA counts: from creation to the
+  first public staff reply, and to the resolution without the pauses (waiting for the
+  client, or resolved until reopened). The p90 is how long the slowest tenth took.
+- `median_wall` is wall-clock minutes from creation, nights, weekends and pauses
+  included: what the client lived.
+- Percentiles interpolate between neighbouring values (`percentile_cont`): the median
+  of 10 and 20 minutes is 15. The `all` row is the percentile of every ticket of the
+  month, not an average of the priorities' figures.
+- As in SLA compliance, each outcome counts in the month it happened, and a cell without
+  outcomes has `null` times.
 
 ## Pagination
 

@@ -33,11 +33,21 @@ class MetricView(APIView):
         return {}
 
 
-class SlaComplianceView(MetricView):
-    """First responses and resolutions within their deadline, per month and priority."""
-
-    query = "sla_compliance"
+class PerPriorityView(MetricView):
+    """A metric per month and priority: the query gets the priorities to list."""
 
     def extra_params(self):
         # From the code, not repeated in the SQL: one list of priorities.
         return {"priorities": list(Priority.values)}
+
+
+class SlaComplianceView(PerPriorityView):
+    """First responses and resolutions within their deadline, per month and priority."""
+
+    query = "sla_compliance"
+
+
+class ResponseTimesView(PerPriorityView):
+    """Median and p90 of the first response and resolution times, in business minutes."""
+
+    query = "response_times"

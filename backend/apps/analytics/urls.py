@@ -6,4 +6,5 @@ app_name = "analytics"
 
 urlpatterns = [
     path("analytics/sla-compliance/", views.SlaComplianceView.as_view(), name="sla-compliance"),
+    path("analytics/response-times/", views.ResponseTimesView.as_view(), name="response-times"),
 ]
