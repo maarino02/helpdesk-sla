@@ -18,10 +18,14 @@ from django.core.management import call_command
 from django.urls import reverse
 
 from apps.core.tests.html import inline_code
+from apps.sla.models import Priority
+from apps.tickets.models import Status, Ticket
+from apps.tickets.services.deadlines import SlaState
 
 STATIC = Path(__file__).resolve().parent.parent / "static" / "web"
 SCRIPTS = sorted(STATIC.rglob("*.js"))
-PAGES = ["web:home", "web:login"]
+PAGES = ["web:tickets", "web:ticket-new", "web:login"]
+JS = STATIC / "js"
 
 
 class Tags(HTMLParser):
@@ -71,28 +75,61 @@ def test_pages_with_a_session_start_hidden(client):
         return attributes
 
     # Shown by layout.js once /api/me/ answers; the login page needs no session.
-    assert "hidden" in main("web:home")
+    assert "hidden" in main("web:tickets")
+    assert "hidden" in main("web:ticket-new")
     assert "hidden" not in main("web:login")
 
 
-def test_the_login_form_never_puts_the_password_in_the_url(client):
+@pytest.mark.parametrize("page", ["web:login", "web:ticket-new"])
+def test_forms_post_if_the_script_fails(client, page):
+    # Without the script, a GET form would put what was typed (a password) in the URL.
+    [form] = tags(client.get(reverse(page)).content.decode(), "form")
+
+    assert form["method"] == "post"
+
+
+def test_the_login_form_lets_password_managers_fill_it(client):
     html = client.get(reverse("web:login")).content.decode()
 
-    [form] = tags(html, "form")
-    assert form["method"] == "post"  # If the script fails, a GET would.
     autocomplete = {i["name"]: i["autocomplete"] for i in tags(html, "input")}
     assert autocomplete == {"email": "username", "password": "current-password"}
 
 
+def test_the_title_field_stops_at_the_columns_length(client):
+    html = client.get(reverse("web:ticket-new")).content.decode()
+
+    [title] = [i for i in tags(html, "input") if i["name"] == "title"]
+    assert int(title["maxlength"]) == Ticket._meta.get_field("title").max_length
+
+
+@pytest.mark.parametrize(
+    ("name", "choices"),
+    [("STATUS", Status.choices), ("PRIORITY", Priority.choices), ("SLA_STATE", SlaState.choices)],
+)
+def test_the_labels_match_the_choices(name, choices):
+    # The same codes in the same order, with the same Spanish labels.
+    code = (JS / "labels.js").read_text(encoding="utf-8")
+    block = re.search(rf"export const {name} = {{(.*?)}};", code, flags=re.DOTALL)
+
+    assert block, name
+    assert re.findall(r'(\w+): "([^"]*)"', block.group(1)) == list(choices)
+
+
 def test_the_urls_in_the_scripts_match_django():
-    api = (STATIC / "js" / "api.js").read_text(encoding="utf-8")
-    layout = (STATIC / "js" / "layout.js").read_text(encoding="utf-8")
+    api = (JS / "api.js").read_text(encoding="utf-8")
+    layout = (JS / "layout.js").read_text(encoding="utf-8")
+    tickets = (JS / "pages" / "tickets.js").read_text(encoding="utf-8")
+    ticket_new = (JS / "pages" / "ticket_new.js").read_text(encoding="utf-8")
 
     assert f'LOGIN_PAGE = "{reverse("web:login")}"' in api
     assert f'SESSION = "{reverse("accounts:session")}"' in api
     assert reverse("accounts:session-refresh") == reverse("accounts:session") + "refresh/"
     assert reverse("accounts:session-logout") == reverse("accounts:session") + "logout/"
     assert f'"{reverse("accounts:me")}"' in layout
+    assert f'"{reverse("accounts:staff")}"' in tickets
+    assert f"`{reverse('tickets:list')}?" in tickets
+    assert f'"{reverse("tickets:categories")}"' in ticket_new
+    assert f'"{reverse("tickets:list")}"' in ticket_new
 
 
 @pytest.mark.parametrize("script", SCRIPTS, ids=lambda path: path.name)
@@ -125,13 +162,13 @@ def test_collectstatic_hashes_the_modules_and_their_imports(client, settings, tm
     call_command("collectstatic", interactive=False, verbosity=0)
 
     # The page links the hashed module...
-    html = client.get(reverse("web:home")).content.decode()
+    html = client.get(reverse("web:tickets")).content.decode()
     [script] = tags(html, "script")
-    hashed = re.fullmatch(r"/static/(web/js/pages/home\.[0-9a-f]{12}\.js)", script["src"])
+    hashed = re.fullmatch(r"/static/(web/js/pages/tickets\.[0-9a-f]{12}\.js)", script["src"])
     assert hashed, script["src"]
     # ...which imports the hashed layout, which imports the hashed api.
-    home = (tmp_path / hashed.group(1)).read_text(encoding="utf-8")
-    layout_name = re.search(r'from "\.\./(layout\.[0-9a-f]{12}\.js)";', home)
-    assert layout_name, home
+    page = (tmp_path / hashed.group(1)).read_text(encoding="utf-8")
+    layout_name = re.search(r'from "\.\./(layout\.[0-9a-f]{12}\.js)";', page)
+    assert layout_name, page
     layout = (tmp_path / "web" / "js" / layout_name.group(1)).read_text(encoding="utf-8")
     assert re.search(r'from "\./api\.[0-9a-f]{12}\.js";', layout), layout

@@ -217,6 +217,11 @@ from `static/web/js/pages/`; the data comes from the API with the user's token.
   its `api()`, which retries once after a `401` and goes to the login page when there
   is no session. `layout.js` starts a page that needs a session.
 - Pages with a session start with `<main hidden>` and show it once `/api/me/` answers.
+- Elements for some roles only carry `data-roles="agent admin"`; `layout.js` shows them
+  to those roles. Presentation only: the API decides what each role may do.
+- Spanish labels for the API's codes (statuses, priorities, SLA states) are in
+  `labels.js`, checked against the Django choices; `dom.js` builds elements without
+  parsing HTML.
 - Data goes into the page with `textContent`, never `innerHTML`, and there is no inline
   code (Content-Security-Policy, see [Using the API](#using-the-api)).
 - Imports between modules are relative and end with `;`, the form collectstatic

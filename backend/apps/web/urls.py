@@ -11,16 +11,25 @@ from django.db import transaction
 from django.urls import path
 from django.views.generic import TemplateView
 
+from apps.tickets.models import Ticket
+
 app_name = "web"
 
 
-def page(template_name):
+def page(template_name, **context):
     # No ATOMIC_REQUESTS transaction: it would open a database connection for a
     # page that never queries. The tests run without database access to keep it so.
-    return transaction.non_atomic_requests(TemplateView.as_view(template_name=template_name))
+    view = TemplateView.as_view(template_name=template_name, extra_context=context)
+    return transaction.non_atomic_requests(view)
 
 
 urlpatterns = [
-    path("", page("web/home.html"), name="home"),
+    path("", page("web/tickets.html"), name="tickets"),
+    path(
+        "tickets/new/",
+        # The form's limit is the column's, so the browser stops at the same length.
+        page("web/ticket_new.html", title_max_length=Ticket._meta.get_field("title").max_length),
+        name="ticket-new",
+    ),
     path("login/", page("web/login.html"), name="login"),
 ]
