@@ -6,6 +6,8 @@ clients and calendars) and agree with a count made another way.
 """
 
 import datetime as dt
+import statistics
+from collections import defaultdict
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -57,3 +59,28 @@ def test_sla_compliance_totals_match_the_tickets(seeded):
     for total in totals:
         month = [r for r in rows if r["month"] == total["month"] and r["priority"] != "all"]
         assert sum(r["resolutions"] for r in month) == total["resolutions"]
+
+
+def test_response_time_medians_match_python(seeded):
+    params = PERIOD.params()
+    rows = run("response_times", {**params, "priorities": list(Priority.values)})
+    zone = PERIOD.time_zone
+    by_month = defaultdict(list)
+    for resolved_at, minutes in Ticket.objects.filter(
+        resolved_at__gte=params["start"], resolved_at__lt=params["end"]
+    ).values_list("resolved_at", "resolution_business_minutes"):
+        by_month[resolved_at.astimezone(zone).date().replace(day=1)].append(minutes)
+
+    totals = {row["month"]: row for row in rows if row["priority"] == "all"}
+    assert by_month
+    for month, minutes in by_month.items():
+        assert totals[month]["resolutions"] == len(minutes)
+        assert totals[month]["resolution_median"] == round(statistics.median(minutes), 1)
+
+
+def test_aging_counts_every_open_ticket_once(seeded):
+    rows = run("open_ticket_aging", {"now": NOW, "org": None})
+
+    open_work = Ticket.objects.filter(status__in=["new", "open", "pending"])
+    assert sum(row["tickets"] for row in rows) == open_work.count() > 0
+    assert sum(row["pending"] for row in rows) == open_work.filter(status="pending").count()
