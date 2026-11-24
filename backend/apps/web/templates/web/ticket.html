@@ -1,0 +1,84 @@
+{% extends "web/base.html" %}
+{% load static %}
+
+{% block title %}Ticket{% endblock %}
+{% block script %}{% static 'web/js/pages/ticket.js' %}{% endblock %}
+
+{% block content %}
+{# Only the id: the ticket comes from the API, which answers 404 if the user may not see it. #}
+<div id="ticket" data-ticket-id="{{ pk }}">
+  <p class="back"><a href="{% url 'web:tickets' %}">← Tickets</a></p>
+
+  <p class="notice" data-not-found hidden>Este ticket no existe o no tienes acceso a él.</p>
+
+  <div data-loaded hidden>
+    <div class="page-head">
+      <h1><span class="reference" data-field="reference"></span> <span data-field="title"></span></h1>
+      <div class="badges" data-badges></div>
+    </div>
+
+    <div class="ticket-layout">
+      <div class="ticket-main">
+        <section class="card">
+          <h2>Descripción</h2>
+          <p class="description" data-field="description"></p>
+        </section>
+
+        <section class="card">
+          <h2>Conversación</h2>
+          <ol class="conversation" data-comments></ol>
+          <p class="empty" data-no-comments hidden>Todavía no hay comentarios.</p>
+
+          <form id="comment-form" method="post" novalidate>
+            <label for="comment-body">Añadir un comentario</label>
+            <textarea id="comment-body" name="body" rows="4" required></textarea>
+            <label class="checkbox" data-roles="agent admin" hidden>
+              <input type="checkbox" name="is_internal"> Nota interna (el cliente no la ve)
+            </label>
+            <p class="form-error" role="alert" data-comment-error hidden></p>
+            <button type="submit" class="button">Enviar</button>
+          </form>
+        </section>
+
+        <section class="card">
+          <details>
+            <summary><h2>Historial</h2></summary>
+            <ol class="history" data-events></ol>
+          </details>
+        </section>
+      </div>
+
+      <aside class="ticket-side">
+        <section class="card">
+          <h2>Estado</h2>
+          <div class="actions" data-transitions></div>
+          <p class="empty" data-no-transitions hidden>No hay cambios de estado disponibles.</p>
+          <p class="form-error" role="alert" data-action-error hidden></p>
+        </section>
+
+        {# Agents and admins only; hidden too once the ticket is closed. #}
+        <section class="card" data-roles="agent admin" hidden>
+          <form id="triage-form" method="post" novalidate>
+            <h2>Triaje</h2>
+            <label for="assignee">Asignado</label>
+            <select id="assignee" name="assignee">
+              <option value="">Sin asignar</option>
+            </select>
+            <label for="priority">Prioridad</label>
+            <select id="priority" name="priority"></select>
+            <label for="category">Categoría</label>
+            <select id="category" name="category"></select>
+            <p class="form-error" role="alert" data-triage-error hidden></p>
+            <button type="submit" class="button">Guardar cambios</button>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>Detalles</h2>
+          <dl class="facts" data-facts></dl>
+        </section>
+      </aside>
+    </div>
+  </div>
+</div>
+{% endblock %}
