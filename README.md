@@ -130,6 +130,7 @@ two beat schedulers would send every periodic task twice.
 | Command                 | Description                                              |
 |-------------------------|----------------------------------------------------------|
 | `make seed`             | Fill an empty database with demo data (`ARGS=--reset` to empty it first) |
+| `make bench-db`         | Build the measurement database with 200,000 tickets      |
 | `make test`             | Run the test suite against PostgreSQL (needs `make up`)  |
 | `make lint`             | Check linting and formatting with ruff, as CI does       |
 | `make format`           | Apply ruff autofixes and format the code                 |

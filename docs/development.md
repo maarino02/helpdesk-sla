@@ -153,6 +153,24 @@ What it creates, the demo accounts, how the history is planned and written, and 
 - After a volume seed, run `ANALYZE` in `make psql` before measuring queries: the
   application role cannot, and the planner has no statistics for the new rows yet.
 
+### Measurement database
+
+Query plans are measured on a separate database, `helpdesk_bench`, with the volume
+seed (43 clients, 200,000 tickets over 24 months, ~390 MB), so the development
+database keeps the demo data:
+
+```sh
+make bench-db                # create, migrate, seed in bulk and ANALYZE (~2.5 min)
+make bench-psql              # SQL console on it (as the superuser)
+make bench-run               # the API against it, to time real requests
+make bench-drop bench-db     # build it again from scratch
+```
+
+`config/settings/bench.py` is the development configuration with every database alias
+pointed at `helpdesk_bench`. Any management command works on it with
+`--settings=config.settings.bench`. To see a plan as the application sees it, apply
+the context as in the SQL console below and run `EXPLAIN (ANALYZE, BUFFERS)`.
+
 ### SQL console
 
 `make psql` connects as the superuser, which bypasses row-level security. To see what

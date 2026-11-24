@@ -10,6 +10,7 @@ otherwise. Request and response bodies are JSON; dates are ISO 8601 in UTC.
 - [Who can do what](#who-can-do-what)
 - [Tickets](#tickets)
 - [Comments and history](#comments-and-history)
+- [Analytics](#analytics)
 - [Pagination](#pagination)
 - [Errors](#errors)
 
@@ -47,6 +48,7 @@ curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 | `POST /api/tickets/{id}/comments/` | Any user | `{"body": ..., "is_internal": false}`; `201` with the comment. |
 | `GET /api/tickets/{id}/events/` | Any user | The ticket history, oldest first. |
 | `GET /api/categories/` | Any user | Active categories, to fill the creation form. Not paginated. |
+| `GET /api/analytics/sla-compliance/` | Any user | SLA compliance per month and priority. See [Analytics](#analytics). |
 
 "Any user" means any authenticated user, but only for the tickets they may see: clients
 see every ticket of their organization, agents and admins see all of them. A ticket the
@@ -161,6 +163,49 @@ Each history entry has `event_type`, `actor` (`null` for the system), `from_valu
 `status_changed`, `assignee_changed`, `priority_changed` (with the old and new deadlines
 in `metadata`), `category_changed` and `sla_recalculated`.
 
+## Analytics
+
+Read-only dashboard metrics, computed by hand-written SQL (`backend/apps/analytics/sql/`).
+Every metric takes the same query parameters:
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `start` | First day of the month eleven months before `end` | `YYYY-MM-DD`, included. |
+| `end` | Today | `YYYY-MM-DD`, included. At most 1,098 days after `start`. |
+| `organization` | Every client (staff); the user's own (clients) | A client asking for another organization gets `403 other_organization`; staff asking for one that does not exist get `400`. |
+
+Days and months are those of the provider's time zone (`Europe/Madrid`) for every
+client, so that their figures add up: a ticket answered at 23:30 on 31 March in Mexico
+City counts in April. The response echoes the period used, then the rows:
+
+```json
+{
+  "period": {"start": "2025-12-01", "end": "2026-11-24", "organization": null,
+             "time_zone": "Europe/Madrid"},
+  "results": [...]
+}
+```
+
+### SLA compliance
+
+`GET /api/analytics/sla-compliance/`: one row per month of the period and priority
+(`low`, `medium`, `high`, `critical`), plus `all` for the month's total:
+
+```json
+{"month": "2026-03-01", "priority": "medium",
+ "first_responses": 3, "first_responses_met": 2, "first_response_rate": 66.7,
+ "resolutions": 2, "resolutions_met": 1, "resolution_rate": 50.0}
+```
+
+- Each outcome counts in the month it happened: a first response in the month of the
+  reply, a resolution in the month of the (last) resolution. A finished month's figures
+  do not change afterwards.
+- Met means before the deadline, as the alert job judges it: a reply exactly at the
+  deadline is a breach. Resolving at 20:00 a ticket due at 18:00 is a breach even though
+  no business minutes passed after 18:00.
+- Months without outcomes come back with zero counts and `null` rates: no data is not
+  0 %.
+
 ## Pagination
 
 Lists of tickets, comments and events use cursor pagination:
@@ -205,6 +250,7 @@ programs, and sometimes extra fields:
 | `403` | `staff_only` | Only agents and admins may change a ticket. |
 | `403` | `internal_notes_staff_only` | A client writing an internal note. |
 | `403` | `comment_not_allowed` | Commenting on another organization's ticket. |
+| `403` | `other_organization` | A client asking for another organization's metrics. |
 
 Other responses follow Django REST Framework: `401` without a valid token, `403` with
 `{"detail": ...}` when the endpoint is not for the user's role, `404` for tickets the user

@@ -4,7 +4,7 @@
 # PowerShell, cmd and sh, so this file works on Windows, macOS, Linux and in CI.
 # Keep shell logic (conditionals, loops, rm...) out of the recipes.
 
-.PHONY: up up-app down ps logs psql db-roles run migrate makemigrations migrations-check seed test lint format worker beat
+.PHONY: up up-app down ps logs psql db-roles run migrate makemigrations migrations-check seed bench-db bench-create bench-migrate bench-seed bench-analyze bench-drop bench-psql bench-run test lint format worker beat
 
 # Start the services in the background and wait until their healthchecks pass.
 up:
@@ -54,6 +54,35 @@ migrations-check:
 # ticket and user, superusers included): make seed ARGS=--reset
 seed:
 	uv run backend/manage.py seed_demo $(ARGS)
+
+# Measurement database (helpdesk_bench): the volume seed for query plans, apart
+# from the development data. make bench-db runs the four steps below in order; to
+# build it again: make bench-drop bench-db. Settings: config/settings/bench.py.
+bench-db: bench-create bench-migrate bench-seed bench-analyze
+
+bench-create:
+	docker compose exec db createdb --owner=helpdesk_owner helpdesk_bench
+
+bench-migrate:
+	uv run backend/manage.py migrate --database owner --settings=config.settings.bench
+
+bench-seed:
+	uv run backend/manage.py seed_demo --bulk --clients 40 --months 24 --tickets 200000 --settings=config.settings.bench
+
+# The planner has no statistics after a bulk load until autovacuum runs, and the
+# application role cannot ANALYZE: the superuser does it here.
+bench-analyze:
+	docker compose exec db psql --dbname=helpdesk_bench --command="ANALYZE"
+
+bench-drop:
+	docker compose exec db dropdb --if-exists helpdesk_bench
+
+bench-psql:
+	docker compose exec db psql --dbname=helpdesk_bench
+
+# The API against the measurement database, to time real requests.
+bench-run:
+	uv run backend/manage.py runserver --settings=config.settings.bench
 
 # Test suite. Needs the db container running (make up); pytest-django creates
 # and drops a separate test_<name> database.
