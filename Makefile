@@ -4,7 +4,7 @@
 # PowerShell, cmd and sh, so this file works on Windows, macOS, Linux and in CI.
 # Keep shell logic (conditionals, loops, rm...) out of the recipes.
 
-.PHONY: up up-app down ps logs psql db-roles run migrate makemigrations migrations-check seed bench-db bench-create bench-migrate bench-seed bench-analyze bench-drop bench-psql bench-run test lint format worker beat
+.PHONY: up up-app down ps logs psql db-roles run migrate makemigrations migrations-check seed bench-db bench-create bench-migrate bench-seed bench-analyze bench-drop bench-psql bench-run bench-queries test lint format worker beat
 
 # Start the services in the background and wait until their healthchecks pass.
 up:
@@ -83,6 +83,11 @@ bench-psql:
 # The API against the measurement database, to time real requests.
 bench-run:
 	uv run backend/manage.py runserver --settings=config.settings.bench
+
+# EXPLAIN ANALYZE of the dashboard queries on it, rolled back; ARGS="--setup file.sql"
+# tries an index or a setting first (scripts/bench_queries.py).
+bench-queries:
+	uv run python scripts/bench_queries.py $(ARGS)
 
 # Test suite. Needs the db container running (make up); pytest-django creates
 # and drops a separate test_<name> database.

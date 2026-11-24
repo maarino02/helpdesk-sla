@@ -163,6 +163,7 @@ database keeps the demo data:
 make bench-db                # create, migrate, seed in bulk and ANALYZE (~2.5 min)
 make bench-psql              # SQL console on it (as the superuser)
 make bench-run               # the API against it, to time real requests
+make bench-queries           # time the dashboard queries on it (docs/analytics.md)
 make bench-drop bench-db     # build it again from scratch
 ```
 
