@@ -32,6 +32,8 @@ for it to time out.
 | `REDIS_URL` | Celery, readiness check | Redis database 0: the broker. |
 | `REDIS_CACHE_URL` | Django cache | Redis database 1. Kept apart from the broker because clearing the cache runs `FLUSHDB`. |
 | `DRF_NUM_PROXIES` | Login throttling | Number of trusted proxies in front of the app. Default `0`: the client address is `REMOTE_ADDR`. Set it behind a proxy, or every client shares the proxy's limit. |
+| `EMAIL_URL` | Notifications | Email backend as a URL, e.g. `smtp+tls://user:password@host:587`. Default `consolemail://`: emails are printed to the worker log. Required in production. |
+| `DEFAULT_FROM_EMAIL` | Notifications | Sender of the notifications. Required in production. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS`, `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SECURE_HSTS_SECONDS`, `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` | Production | HTTPS settings. HSTS starts at 0. |
 | `WEB_CONCURRENCY` | Gunicorn | Worker processes in the image (default 2). |
 

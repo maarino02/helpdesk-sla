@@ -39,7 +39,7 @@ stateDiagram-v2
 | `open` → `resolved` | Agent or admin | Sets `resolved_at` and `resolution_business_minutes`, and pauses the clock. |
 | `pending` → `resolved` | Agent or admin | Adds the paused time to the deadline before setting `resolved_at` and `resolution_business_minutes`; the clock stays stopped. |
 | `resolved` → `open` | Client (reopens) or agent | Extends the deadline by the time spent in `resolved`, clears `resolved_at`, `resolution_business_minutes` and `sla_paused_at`. |
-| `resolved` → `closed` | Client (confirms) or system after 7 days | Sets `closed_at` and clears `sla_paused_at`: the clock is stopped for good, not paused, and the deadline is not extended. Auto-close runs as a background job with no actor. |
+| `resolved` → `closed` | Client (confirms) or system after 7 days | Sets `closed_at` and clears `sla_paused_at`: the clock is stopped for good, not paused, and the deadline is not extended. Auto-close runs as an hourly background job with no actor (`AUTO_CLOSE_AFTER`, 7 calendar days), one transaction per ticket; it checks the status and `resolved_at` again on the locked row and skips tickets locked by someone else. |
 
 Any other combination is rejected with `409 Conflict`. A transition that exists but
 is not allowed for the actor's role is rejected with `403 Forbidden` (see ADR-0003).

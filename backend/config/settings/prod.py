@@ -14,6 +14,9 @@ SECRET_KEY = env("DJANGO_SECRET_KEY")
 SIMPLE_JWT["SIGNING_KEY"] = env("JWT_SIGNING_KEY")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")
 CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
+# Required: with the base default, production emails would only reach the log.
+vars().update(env.email_url("EMAIL_URL"))
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
 
 # TLS is terminated by the platform's proxy, which forwards the original scheme.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

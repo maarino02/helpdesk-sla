@@ -1,0 +1,13 @@
+{% autoescape off %}Hola, {{ recipient.full_name }}:
+
+{% if status == "pending" %}Para seguir con tu incidencia {{ ticket.reference }} ("{{ ticket.title }}") necesitamos más información. Puedes responder con un comentario en la incidencia; en cuanto lo hagas, volveremos a trabajar en ella.
+{% elif status == "resolved" %}Hemos resuelto tu incidencia {{ ticket.reference }} ("{{ ticket.title }}").
+
+Si el problema continúa, puedes reabrirla. Si no, se cerrará automáticamente dentro de {{ auto_close_days }} días.
+{% elif auto_closed %}Tu incidencia {{ ticket.reference }} ("{{ ticket.title }}") se ha cerrado automáticamente tras {{ auto_close_days }} días resuelta sin cambios.
+
+Si vuelves a tener el problema, abre una incidencia nueva.
+{% else %}Tu incidencia {{ ticket.reference }} ("{{ ticket.title }}") se ha cerrado.
+{% endif %}
+Equipo de soporte
+{% endautoescape %}
