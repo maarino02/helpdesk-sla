@@ -14,6 +14,7 @@ from apps.tickets.services.notifications import (
     build_message,
     notify_on_commit,
     recipient_ids,
+    suppressed,
 )
 from apps.tickets.services.state_machine import transition
 from apps.tickets.tests.factories import SlaAlertFactory, TicketFactory
@@ -267,6 +268,42 @@ def test_alert_job_enqueues_one_notification_per_new_alert(
 def test_notify_on_commit_rejects_unknown_kinds():
     with pytest.raises(ValueError, match="Unknown notification kind"):
         notify_on_commit("comment", 1)
+
+
+# Suppression (the demo seed writes past history that nobody must hear about)
+
+
+def test_nothing_is_enqueued_inside_suppressed(enqueued, django_capture_on_commit_callbacks):
+    ticket = TicketFactory(status=Status.OPEN)
+
+    with django_capture_on_commit_callbacks(execute=True) as callbacks, suppressed():
+        transition(ticket, Status.RESOLVED, AgentUserFactory())
+
+    assert callbacks == []
+    assert enqueued == []
+
+
+def test_suppression_is_decided_when_registering_not_when_committing(
+    enqueued, django_capture_on_commit_callbacks
+):
+    # The commit happens after the block ends, as when a seed step runs inside
+    # an outer transaction: it must still send nothing.
+    with django_capture_on_commit_callbacks(execute=True):
+        with suppressed():
+            notify_on_commit(STATUS_CHANGE, 1)
+        assert enqueued == []  # not committed yet
+
+    assert enqueued == []
+
+
+def test_notifications_resume_after_the_block(enqueued, django_capture_on_commit_callbacks):
+    with pytest.raises(RuntimeError), suppressed():
+        raise RuntimeError("the seed fails halfway")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        notify_on_commit(STATUS_CHANGE, 1)
+
+    assert enqueued == [(STATUS_CHANGE, 1)]
 
 
 # Tasks

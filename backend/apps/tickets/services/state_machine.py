@@ -114,6 +114,7 @@ def transition(ticket: Ticket, to_status: str, actor, *, now: datetime | None = 
             event_type=EventType.STATUS_CHANGED,
             from_value=from_status,
             to_value=to_status,
+            created_at=now,
         )
         if to_status in NOTIFIED_STATUSES:
             # Registered on the outermost transaction: sent only if the whole
@@ -163,7 +164,7 @@ def _apply_effects(ticket: Ticket, from_status: str, to_status: str, actor, now)
     if from_status == Status.NEW and ticket.assignee_id is None:
         # The agent who takes an unassigned ticket becomes its assignee. new -> open
         # is the only way out of new, and only staff may do it (checked above).
-        _record_assignment(ticket, actor)
+        _record_assignment(ticket, actor, now)
         changed.append("assignee")
 
     if to_status == Status.PENDING:
@@ -191,7 +192,7 @@ def _apply_effects(ticket: Ticket, from_status: str, to_status: str, actor, now)
     return changed
 
 
-def _record_assignment(ticket: Ticket, assignee) -> None:
+def _record_assignment(ticket: Ticket, assignee, now) -> None:
     TicketEvent.objects.create(
         ticket=ticket,
         organization_id=ticket.organization_id,
@@ -199,5 +200,6 @@ def _record_assignment(ticket: Ticket, assignee) -> None:
         event_type=EventType.ASSIGNEE_CHANGED,
         from_value=None,
         to_value=str(assignee.pk),
+        created_at=now,
     )
     ticket.assignee = assignee

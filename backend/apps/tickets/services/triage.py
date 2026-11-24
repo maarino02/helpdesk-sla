@@ -91,6 +91,7 @@ def update_ticket(
                 EventType.ASSIGNEE_CHANGED,
                 _id_or_none(locked.assignee_id),
                 _id_or_none(new_assignee_id),
+                now,
             )
             locked.assignee = assignee
             changed.append("assignee")
@@ -104,6 +105,7 @@ def update_ticket(
                 EventType.CATEGORY_CHANGED,
                 str(locked.category_id),
                 str(category.pk),
+                now,
             )
             locked.category = category
             changed.append("category")
@@ -120,6 +122,7 @@ def update_ticket(
                 EventType.PRIORITY_CHANGED,
                 locked.priority,
                 priority,
+                now,
                 metadata,
             )
             locked.priority = priority
@@ -204,7 +207,7 @@ def _move_deadlines(ticket: Ticket, priority: str, now: datetime) -> dict:
     }
 
 
-def _event(ticket, actor, event_type, from_value, to_value, metadata=None) -> None:
+def _event(ticket, actor, event_type, from_value, to_value, now, metadata=None) -> None:
     TicketEvent.objects.create(
         ticket=ticket,
         organization_id=ticket.organization_id,
@@ -213,6 +216,7 @@ def _event(ticket, actor, event_type, from_value, to_value, metadata=None) -> No
         from_value=from_value,
         to_value=to_value,
         metadata=metadata or {},
+        created_at=now,
     )
 
 

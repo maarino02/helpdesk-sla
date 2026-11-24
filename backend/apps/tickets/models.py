@@ -388,6 +388,8 @@ class TicketEvent(models.Model):
     to_value = models.CharField(max_length=100, null=True, blank=True)  # noqa: DJ001
     # Extra details, e.g. old and new deadlines in sla_recalculated.
     metadata = models.JSONField(db_default={})
+    # The services set it to the instant of the change they record, the same one
+    # stored on the ticket; the default only covers rows inserted by hand.
     created_at = models.DateTimeField(db_default=Now())
 
     class Meta:

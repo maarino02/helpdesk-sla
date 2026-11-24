@@ -231,6 +231,7 @@ def test_event_records_the_change(calendar, ticket):
 
     event = TicketEvent.objects.get(ticket=ticket, event_type=EventType.SLA_RECALCULATED)
     assert event.actor is None
+    assert event.created_at == madrid(23, 12)  # the instant given, not the database clock
     # Stored in UTC, as every timestamp: 17:00 in Madrid is 16:00 UTC in November.
     assert event.metadata == {
         "resolution_due_at": {
