@@ -14,4 +14,5 @@ urlpatterns = [
     ),
     path("analytics/category-trends/", views.CategoryTrendsView.as_view(), name="category-trends"),
     path("analytics/agent-workload/", views.AgentWorkloadView.as_view(), name="agent-workload"),
+    path("analytics/daily-backlog/", views.DailyBacklogView.as_view(), name="daily-backlog"),
 ]

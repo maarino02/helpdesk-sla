@@ -61,21 +61,35 @@ class CategoryTrendsView(MetricView):
     query = "category_trends"
 
 
-class AgentWorkloadView(MetricView):
-    """Open work now and output over the period, per staff member. Staff only.
+class MetricAtNowView(MetricView):
+    """A metric over the period that also depends on the current instant.
 
-    Mixes a snapshot (the open tickets) with the period (the resolutions), so the
-    response carries both the instant and the period.
+    The instant is taken once, passed to the query as now and echoed as as_of,
+    next to the period.
     """
-
-    query = "agent_workload"
-    permission_classes = [IsAuthenticated, IsStaff]
 
     def get(self, request):
         period = read_period(request)
         now = timezone.now()
         rows = run(self.query, {**period.params(), "now": now})
         return Response({"as_of": now, "period": period.describe(), "results": rows})
+
+
+class AgentWorkloadView(MetricAtNowView):
+    """Open work now and output over the period, per staff member. Staff only."""
+
+    query = "agent_workload"
+    permission_classes = [IsAuthenticated, IsStaff]
+
+
+class DailyBacklogView(MetricAtNowView):
+    """Open tickets at the end of each day, rebuilt from the history.
+
+    Needs the instant: the period stops at today, and today's figure is the
+    backlog so far.
+    """
+
+    query = "daily_backlog"
 
 
 class SnapshotView(APIView):

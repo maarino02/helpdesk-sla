@@ -53,6 +53,7 @@ curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 | `GET /api/analytics/open-ticket-aging/` | Any user | Open tickets by age right now, with how many have breached their SLA. |
 | `GET /api/analytics/category-trends/` | Any user | Tickets created per month and category, with the change from the month before and the rank. |
 | `GET /api/analytics/agent-workload/` | Agent, admin | Open work now and resolutions over the period, per staff member. |
+| `GET /api/analytics/daily-backlog/` | Any user | Open tickets at the end of each day of the period, rebuilt from the ticket history. |
 
 "Any user" means any authenticated user, but only for the tickets they may see: clients
 see every ticket of their organization, agents and admins see all of them. A ticket the
@@ -321,6 +322,24 @@ instant and the period:
   they still hold tickets. Tickets without an assignee have their own row, `agent_id:
   null`, always last; the rows add up to the totals of the other metrics.
 - Busiest first (most open tickets), then by name.
+
+### Daily backlog
+
+`GET /api/analytics/daily-backlog/`: one row per day of the period up to today, oldest
+first, with the tickets open at the end of the day (today: so far). Days are those of
+the provider's time zone, and the response carries `as_of` next to the period, as in
+agent workload:
+
+```json
+{"day": "2026-11-22", "backlog": 4, "new": 1, "open": 3, "pending": 0,
+ "created": 1, "resolved": 0}
+```
+
+- `backlog` is `new + open + pending`, the work still to do; `created` and `resolved`
+  are what came in and went out that day (a ticket resolved twice counts twice).
+- The past is rebuilt from the ticket history, not read from the tickets, which only
+  know their current status: today's figures always equal the open tickets now.
+- A period ending in the future stops at today.
 
 ## Pagination
 

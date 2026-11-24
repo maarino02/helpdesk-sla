@@ -135,3 +135,19 @@ def test_category_trends_count_every_created_ticket(seeded):
     first = min(totals)
     previous = sum(row["previous"] for row in rows if row["month"] == first)
     assert previous == per_month[(first - dt.timedelta(days=1)).replace(day=1)]
+
+
+def test_daily_backlog_rebuilt_from_events_ends_at_the_current_tickets(seeded):
+    rows = run("daily_backlog", {**PERIOD.params(), "now": NOW})
+
+    today = rows[-1]
+    assert today["day"] == NOW.astimezone(PERIOD.time_zone).date()
+    current = {
+        status: Ticket.objects.filter(status=status).count()
+        for status in ("new", "open", "pending")
+    }
+    assert {status: today[status] for status in current} == current
+    assert today["backlog"] == sum(current.values()) > 0
+    # Every day of the period, and never a negative count.
+    assert len(rows) == (PERIOD.end - PERIOD.start).days + 1
+    assert all(min(row["new"], row["open"], row["pending"]) >= 0 for row in rows)
