@@ -5,7 +5,7 @@
 Multi-tenant helpdesk with SLA tracking in business hours, built with Django,
 PostgreSQL Row-Level Security and Celery.
 
-> **Status:** in development. Phase 5 (SLA engine) is complete; phase 6 (background jobs) is next. See the [roadmap](#roadmap).
+> **Status:** in development. Phase 6 (background jobs) is complete; phase 7 (demo data) is next. See the [roadmap](#roadmap).
 
 ## Overview
 
@@ -27,7 +27,9 @@ A background process watches those deadlines and raises alerts before they are b
 - Public comments and internal notes visible only to agents
 - SLA policies per priority, calculated in business hours (weekends and holidays excluded)
 - Full audit trail in an append-only events table
-- Background alerts when a ticket is about to breach its SLA
+- Background alerts when a ticket is about to breach its SLA, or has breached it
+- Automatic closing of resolved tickets the client does not reopen within 7 days
+- Email notifications to the requester and to the support team
 - Analytics dashboard built on hand-written SQL: SLA compliance, response and resolution
   times, ticket aging, agent workload and category trends
 
@@ -50,7 +52,7 @@ A background process watches those deadlines and raises alerts before they are b
 - [x] **Phase 3 - Auth & isolation:** JWT, roles and Row-Level Security policies
 - [x] **Phase 4 - Tickets API:** CRUD, state transitions, comments and event history
 - [x] **Phase 5 - SLA engine:** business-time calculation, holidays and pauses
-- [ ] **Phase 6 - Background jobs:** SLA alerts and auto-close with Celery
+- [x] **Phase 6 - Background jobs:** SLA alerts, auto-close and email notifications with Celery
 - [ ] **Phase 7 - Demo data:** realistic seed data and demo accounts
 - [ ] **Phase 8 - Analytics:** SQL dashboard queries, indexes and query plans
 - [ ] **Phase 9 - Frontend:** ticket views and dashboard with Chart.js
@@ -139,6 +141,14 @@ history. Clients see only their organization's tickets, and every status change 
 through the state machine. Endpoints, permissions by role, pagination and error codes are
 in the [API reference](docs/api.md).
 
+### Background jobs
+
+Celery runs the periodic jobs: every minute, a set of `INSERT ... SELECT ... ON CONFLICT
+DO NOTHING` statements records the SLA warnings and breaches that have become due; every
+hour, resolved tickets older than 7 days are closed through the state machine. Status
+changes and alerts send emails, enqueued only after the transaction commits. Schedules,
+idempotency and delivery guarantees are in [Background jobs](docs/background-jobs.md).
+
 ## Documentation
 
 - [Development guide](docs/development.md): configuration, database roles, working
@@ -146,6 +156,8 @@ in the [API reference](docs/api.md).
 - [API reference](docs/api.md): endpoints, permissions by role, pagination and errors
 - [SLA and business time](docs/sla.md): what a business minute is, how deadlines are
   computed and how they move
+- [Background jobs](docs/background-jobs.md): SLA alerts, auto-close and email
+  notifications: schedules, idempotency and delivery guarantees
 - [Data model](docs/data-model.md): ER diagram, constraints, indexes and RLS policies
 - [Ticket state machine](docs/state-machine.md): states, transitions and permissions
 - Architecture decision records:
