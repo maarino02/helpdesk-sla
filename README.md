@@ -214,6 +214,7 @@ reuses ids are in [Demo data](docs/demo-data.md).
   - [ADR-0003](docs/adr/0003-ticket-state-machine-service-layer.md): ticket state machine in the service layer
   - [ADR-0004](docs/adr/0004-rls-request-context.md): row-level security context per request (identify, then widen)
   - [ADR-0005](docs/adr/0005-synchronous-deadline-recalculation.md): deadlines recalculated synchronously when a calendar changes
+  - [ADR-0006](docs/adr/0006-browser-tokens-refresh-cookie.md): browser tokens, the access token in memory and the refresh token in an HttpOnly cookie
 
 ## License
 

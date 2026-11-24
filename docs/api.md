@@ -29,6 +29,18 @@ every request, and that request runs with the matching row-level security contex
 change of role or a deactivation applies to the next request with the same token. See
 [ADR-0004](adr/0004-rls-request-context.md).
 
+### Browser sessions
+
+The web pages do not keep the refresh token where scripts can read it
+([ADR-0006](adr/0006-browser-tokens-refresh-cookie.md)). These three endpoints take and
+return JSON only (anything else is a `415`) and need no access token:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/auth/session/` | `email` and `password` → `access` in the body; the refresh token in an `HttpOnly`, `SameSite=Strict` cookie limited to `/api/auth/session/`. Same throttle as the token login, shared with it. |
+| `POST /api/auth/session/refresh/` | With the cookie → new `access`. `401` with code `no_session` without it. |
+| `POST /api/auth/session/logout/` | Removes the cookie; `204`. |
+
 ```sh
 curl -s -X POST http://127.0.0.1:8000/api/auth/token/ \
      -d email=ana@acme.com -d password=secret

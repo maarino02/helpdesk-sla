@@ -18,6 +18,9 @@ from apps.accounts.authentication import RlsJWTAuthentication
 WITHOUT_JWT = {
     "accounts:token": "login: credentials, not a token",
     "accounts:token-refresh": "the refresh token is the credential",
+    "accounts:session": "browser login: credentials, not a token (ADR-0006)",
+    "accounts:session-refresh": "the refresh cookie is the credential",
+    "accounts:session-logout": "only removes the cookie; must work with an expired token",
 }
 
 

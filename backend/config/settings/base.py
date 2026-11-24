@@ -243,6 +243,13 @@ SIMPLE_JWT = {
     "USER_ID_CLAIM": "user_id",
 }
 
+# Browser sessions (ADR-0006): the page keeps the access token in memory and the
+# refresh token travels in this cookie, sent only to the /api/auth/session/ views.
+REFRESH_COOKIE_NAME = "helpdesk_refresh"
+REFRESH_COOKIE_PATH = "/api/auth/session/"
+# HTTPS only. dev.py turns it off: the development server is plain HTTP.
+REFRESH_COOKIE_SECURE = True
+
 # Internationalization
 # Timestamps are always stored and handled in UTC. Each client's time zone is only
 # used to evaluate business hours (see ADR-0002).
