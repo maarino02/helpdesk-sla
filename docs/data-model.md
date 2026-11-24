@@ -204,6 +204,7 @@ which also starts with `calendar_id`.
 | `ticket (resolution_due_at) WHERE status IN ('new', 'open')` | Partial index for the background job that looks for tickets about to breach. |
 | `ticket (first_response_due_at) WHERE first_response_at IS NULL` | Same, for the first-response SLA. |
 | `ticket (resolution_warning_at) WHERE status IN ('new', 'open')` and `ticket (first_response_warning_at) WHERE first_response_at IS NULL` | The same partial conditions, for the warning alerts. |
+| `ticket (resolved_at, id) WHERE status = 'resolved'` | Auto-close job: resolved tickets past the client's window, read in batches with keyset pagination on `(resolved_at, id)`. Partial because closed tickets accumulate forever while resolved ones are few. |
 | `ticket (created_at)` | Monthly aggregations in the dashboard. |
 | `ticket_comment (ticket_id, created_at)` | Ordered comment thread. |
 | `ticket_event (ticket_id, created_at)` | Ticket history. |

@@ -169,6 +169,14 @@ class Ticket(models.Model):
                 condition=Q(first_response_at__isnull=True),
                 name="ticket_first_resp_warn_idx",
             ),
+            # Auto-close job: resolved tickets in (resolved_at, id) order, the key
+            # it pages through in batches. Partial: resolved is a small, transient
+            # share of the table, while closed tickets accumulate forever.
+            models.Index(
+                fields=["resolved_at", "id"],
+                condition=Q(status=Status.RESOLVED),
+                name="ticket_resolved_at_idx",
+            ),
             # Monthly dashboard aggregations and the default -created_at ordering:
             # a B-tree returns rows already sorted, so ORDER BY ... LIMIT needs no sort.
             models.Index(fields=["created_at"], name="ticket_created_at_idx"),

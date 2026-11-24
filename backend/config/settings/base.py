@@ -155,7 +155,16 @@ CELERY_BEAT_SCHEDULE = {
         # backlog instead of running it N times.
         "options": {"expires": 60},
     },
+    "auto-close-resolved": {
+        "task": "apps.tickets.tasks.auto_close_resolved",
+        "schedule": 3600.0,
+        "options": {"expires": 3600},  # same reasoning as the SLA alerts
+    },
 }
+
+# Resolved tickets the client neither confirms nor reopens are closed after this
+# much calendar time (not business time: it is the client's window to react).
+AUTO_CLOSE_AFTER = timedelta(days=7)
 
 # Security
 # Health checks come from inside the container network over plain HTTP, without

@@ -26,6 +26,10 @@ def ticket_indexes():
             "USING btree (first_response_due_at) WHERE (first_response_at IS NULL)",
         ),
         ("ticket_created_at_idx", "USING btree (created_at)"),
+        (
+            "ticket_resolved_at_idx",
+            "USING btree (resolved_at, id) WHERE ((status)::text = 'resolved'::text)",
+        ),
     ],
 )
 def test_index_exists_with_expected_definition(name, definition):
