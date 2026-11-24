@@ -107,5 +107,6 @@ def _reproject_ticket(ticket: Ticket, old: Schedule, new: Schedule, now, context
             },
             **context,
         },
+        created_at=now,
     )
     return True

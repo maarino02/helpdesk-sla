@@ -90,6 +90,7 @@ def create_ticket(
             organization=organization,
             actor=requester,
             event_type=EventType.CREATED,
+            created_at=now,
         )
     return ticket
 
