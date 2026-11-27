@@ -34,5 +34,6 @@ urlpatterns = [
     # The id reaches the template (TemplateView passes the URL's arguments), and
     # from there the script: the page itself does not look the ticket up.
     path("tickets/<int:pk>/", page("web/ticket.html"), name="ticket"),
+    path("dashboard/", page("web/dashboard.html"), name="dashboard"),
     path("login/", page("web/login.html"), name="login"),
 ]

@@ -2,6 +2,11 @@
 # Setup once per clone: uv run pre-commit install
 # Run on the whole repository: uv run pre-commit run --all-files
 
+# Third-party files are kept byte for byte as published (their checksum must still
+# match), so no hook may fix them: the source map has no final newline and is
+# larger than check-added-large-files allows.
+exclude: ^backend/apps/web/static/web/vendor/
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
