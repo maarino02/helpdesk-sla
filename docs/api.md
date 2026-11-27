@@ -61,6 +61,7 @@ curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 | `GET /api/tickets/{id}/events/` | Any user | The ticket history, oldest first. |
 | `GET /api/categories/` | Any user | Active categories, to fill the creation form. Not paginated. |
 | `GET /api/staff/` | Agents, admins | Active agents and admins by name, `{id, full_name, role}`: whom a ticket can be assigned to. Not paginated. |
+| `GET /api/organizations/` | Agents, admins | Every client, active ones first, by name, `{id, name, is_active}`: the client filter of the analytics. Deactivated clients are listed, since their past metrics remain. Not paginated. |
 | `GET /api/analytics/sla-compliance/` | Any user | SLA compliance per month and priority. See [Analytics](#analytics). |
 | `GET /api/analytics/response-times/` | Any user | Median and p90 response and resolution times per month and priority. |
 | `GET /api/analytics/open-ticket-aging/` | Any user | Open tickets by age right now, with how many have breached their SLA. |
@@ -208,7 +209,7 @@ Every metric takes the same query parameters:
 |---|---|---|
 | `start` | First day of the month eleven months before `end` | `YYYY-MM-DD`, included. |
 | `end` | Today | `YYYY-MM-DD`, included. At most 1,098 days after `start`. |
-| `organization` | Every client (staff); the user's own (clients) | A client asking for another organization gets `403 other_organization`; staff asking for one that does not exist get `400`. |
+| `organization` | Every client (staff); the user's own (clients) | A client asking for another organization gets `403 other_organization`; staff asking for one that does not exist get `400`. The ids come from `GET /api/organizations/`. |
 
 Days and months are those of the provider's time zone (`Europe/Madrid`) for every
 client, so that their figures add up: a ticket answered at 23:30 on 31 March in Mexico
