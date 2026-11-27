@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{% endblock %} · HelpDesk SLA</title>
   <link rel="stylesheet" href="{% static 'web/css/base.css' %}">
+  {# Classic scripts a page needs before its module (a library that defines a global).
+     With defer they run in document order with the module, after the parsing. #}
+  {% block libraries %}{% endblock %}
   {# Modules run after the document is parsed, like defer: no DOMContentLoaded needed. #}
   <script type="module" src="{% block script %}{% endblock %}"></script>
 </head>
@@ -15,6 +18,7 @@
     <nav class="topnav" aria-label="Principal">
       <a href="{% url 'web:tickets' %}">Tickets</a>
       <a href="{% url 'web:ticket-new' %}" data-roles="client" hidden>Nuevo ticket</a>
+      <a href="{% url 'web:dashboard' %}">Panel</a>
     </nav>
     {# Filled in and shown by layout.js once the session is known. #}
     <div class="account" data-account hidden>

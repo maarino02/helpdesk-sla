@@ -1,0 +1,97 @@
+{% extends "web/base.html" %}
+{% load static %}
+
+{% block title %}Panel{% endblock %}
+{# Chart.js as published (UMD build): it defines window.Chart before the module runs. #}
+{% block libraries %}<script defer src="{% static 'web/vendor/chart.js-4.6.1/chart.umd.min.js' %}"></script>{% endblock %}
+{% block script %}{% static 'web/js/pages/dashboard.js' %}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Panel</h1>
+  <p class="notice" id="period-summary"></p>
+</div>
+
+{# The values come from the URL; the client options, from /api/organizations/. #}
+<form class="filters" id="filters">
+  <label>Periodo
+    <select name="period">
+      <option value="3m">Últimos 3 meses</option>
+      <option value="6m">Últimos 6 meses</option>
+      <option value="12m" selected>Últimos 12 meses</option>
+      <option value="year">Este año</option>
+      <option value="custom">Personalizado</option>
+    </select>
+  </label>
+  <label data-custom hidden>Desde
+    <input type="date" name="start">
+  </label>
+  <label data-custom hidden>Hasta
+    <input type="date" name="end">
+  </label>
+  <label data-roles="agent admin" hidden>Cliente
+    <select name="organization"><option value="">Todos los clientes</option></select>
+  </label>
+</form>
+<p class="field-error" id="period-error" hidden></p>
+
+<div class="dashboard">
+  <section class="card chart-card" data-chart="sla-compliance">
+    <div class="chart-head">
+      <h2>Cumplimiento del SLA</h2>
+      <label class="inline">Prioridad
+        <select data-priority><option value="all">Todas</option></select>
+      </label>
+    </div>
+    <p class="chart-note">Porcentaje de primeras respuestas y resoluciones dentro de plazo, por mes.</p>
+    <div class="chart-box"><canvas role="img" aria-label="Gráfico de líneas: cumplimiento del SLA por mes"></canvas></div>
+    <p class="chart-message" data-message hidden></p>
+  </section>
+
+  <section class="card chart-card" data-chart="response-times">
+    <div class="chart-head">
+      <h2>Tiempos de respuesta</h2>
+      <label class="inline">Medida
+        <select data-measure>
+          <option value="first_response">Primera respuesta</option>
+          <option value="resolution">Resolución</option>
+        </select>
+      </label>
+      <label class="inline">Prioridad
+        <select data-priority><option value="all">Todas</option></select>
+      </label>
+    </div>
+    <p class="chart-note">Mediana y percentil 90 en horas laborables, por mes.</p>
+    <div class="chart-box"><canvas role="img" aria-label="Gráfico de barras: tiempos de respuesta por mes"></canvas></div>
+    <p class="chart-message" data-message hidden></p>
+  </section>
+
+  <section class="card chart-card" data-chart="daily-backlog">
+    <div class="chart-head"><h2>Tickets abiertos por día</h2></div>
+    <p class="chart-note" data-summary>Tickets pendientes de trabajo al final de cada día.</p>
+    <div class="chart-box"><canvas role="img" aria-label="Gráfico de áreas: tickets abiertos al final de cada día"></canvas></div>
+    <p class="chart-message" data-message hidden></p>
+  </section>
+
+  <section class="card chart-card" data-chart="open-ticket-aging">
+    <div class="chart-head"><h2>Antigüedad de los abiertos</h2></div>
+    <p class="chart-note" data-summary>Estado actual: no depende del periodo.</p>
+    <div class="chart-box"><canvas role="img" aria-label="Gráfico de barras: tickets abiertos por antigüedad"></canvas></div>
+    <p class="chart-message" data-message hidden></p>
+  </section>
+
+  <section class="card chart-card" data-chart="category-trends">
+    <div class="chart-head"><h2>Tickets por categoría</h2></div>
+    <p class="chart-note">Tickets creados cada mes, por su categoría actual.</p>
+    <div class="chart-box"><canvas role="img" aria-label="Gráfico de barras apiladas: tickets creados por mes y categoría"></canvas></div>
+    <p class="chart-message" data-message hidden></p>
+  </section>
+
+  <section class="card chart-card wide" data-chart="agent-workload" data-roles="agent admin" hidden>
+    <div class="chart-head"><h2>Carga por agente</h2></div>
+    <p class="chart-note">Abiertos ahora y resueltos en el periodo, por persona asignada.</p>
+    <div class="chart-box"><canvas role="img" aria-label="Gráfico de barras: carga de trabajo por agente"></canvas></div>
+    <p class="chart-message" data-message hidden></p>
+  </section>
+</div>
+{% endblock %}

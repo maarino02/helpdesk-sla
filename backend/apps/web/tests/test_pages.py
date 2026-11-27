@@ -15,7 +15,7 @@ import pytest
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.core.management import call_command
-from django.urls import reverse
+from django.urls import get_resolver, reverse
 
 from apps.core.tests.html import inline_code
 from apps.sla.models import Priority
@@ -24,9 +24,19 @@ from apps.tickets.services.deadlines import SlaState
 from apps.tickets.services.state_machine import TRANSITIONS
 
 STATIC = Path(__file__).resolve().parent.parent / "static" / "web"
-SCRIPTS = sorted(STATIC.rglob("*.js"))
+# Third-party files, kept as published: the rules on our scripts are not theirs.
+VENDOR = STATIC / "vendor"
+SCRIPTS = sorted(path for path in STATIC.rglob("*.js") if VENDOR not in path.parents)
+# The only classic script a page may load, before its module (dashboard.html).
+CHART_JS = "web/vendor/chart.js-4.6.1/chart.umd.min.js"
 # (name, URL arguments): the detail page needs a ticket id, any id.
-PAGES = [("web:tickets", []), ("web:ticket-new", []), ("web:ticket", [7]), ("web:login", [])]
+PAGES = [
+    ("web:tickets", []),
+    ("web:ticket-new", []),
+    ("web:ticket", [7]),
+    ("web:dashboard", []),
+    ("web:login", []),
+]
 
 
 def url(page):
@@ -71,9 +81,16 @@ def test_pages_render_without_inline_code(client, page):
 def test_each_page_loads_one_module_that_exists(client, page):
     html = client.get(url(page)).content.decode()
 
-    [script] = tags(html, "script")
+    *libraries, script = tags(html, "script")
     assert script["type"] == "module"
     assert finders.find(static_path(script["src"])), script["src"]
+    # Only the dashboard loads a library, deferred so that it runs before the
+    # module (scripts with defer and modules run in document order).
+    expected = [CHART_JS] if page[0] == "web:dashboard" else []
+    assert [static_path(library["src"]) for library in libraries] == expected
+    for library in libraries:
+        assert "defer" in library and "type" not in library, library
+        assert finders.find(static_path(library["src"])), library["src"]
     [stylesheet] = [link for link in tags(html, "link") if link.get("rel") == "stylesheet"]
     assert finders.find(static_path(stylesheet["href"])), stylesheet["href"]
 
@@ -87,6 +104,7 @@ def test_pages_with_a_session_start_hidden(client):
     assert "hidden" in main("web:tickets")
     assert "hidden" in main("web:ticket-new")
     assert "hidden" in main(("web:ticket", [7]))
+    assert "hidden" in main("web:dashboard")
     assert "hidden" not in main("web:login")
 
 
@@ -177,6 +195,26 @@ def test_the_urls_in_the_scripts_match_django():
     # Every use, not just one: comments/ is read and written in different places.
     used = re.findall(r"`\$\{TICKET_URL\}([^`]*)`", ticket)
     assert used and set(used) == suffixes, used
+
+
+def test_the_dashboard_asks_for_every_metric_at_its_django_url():
+    dashboard = (JS / "pages" / "dashboard.js").read_text(encoding="utf-8")
+    block = re.search(r"const METRICS = {(.*?)};", dashboard, flags=re.DOTALL)
+    metrics = dict(re.findall(r'"([\w-]+)": "([^"]+)"', block.group(1)))
+
+    assert f'ORGANIZATIONS = "{reverse("organizations:list")}"' in dashboard
+    # Every analytics endpoint, each under its URL name: a new metric fails the
+    # test until the dashboard shows it.
+    analytics = get_resolver().namespace_dict["analytics"][1]
+    names = {pattern.name for pattern in analytics.url_patterns}
+    assert metrics == {name: reverse(f"analytics:{name}") for name in names}
+
+
+def test_every_page_links_to_the_dashboard(client):
+    # From the navigation of base.html: every page with a session has it.
+    for page in ["web:tickets", "web:ticket-new", ("web:ticket", [7]), "web:dashboard"]:
+        links = [a.get("href") for a in tags(client.get(url(page)).content.decode(), "a")]
+        assert reverse("web:dashboard") in links, page
 
 
 @pytest.mark.parametrize("script", SCRIPTS, ids=lambda path: path.name)
