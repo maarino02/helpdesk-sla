@@ -5,7 +5,7 @@
 Multi-tenant helpdesk with SLA tracking in business hours, built with Django,
 PostgreSQL Row-Level Security and Celery.
 
-> **Status:** in development. Phase 8 (analytics) is complete; phase 9 (frontend) is next. See the [roadmap](#roadmap).
+> **Status:** in development. Phase 9 (frontend) is complete; phase 10 (release) is next. See the [roadmap](#roadmap).
 
 ## Overview
 
@@ -18,7 +18,7 @@ Every ticket gets SLA deadlines for first response and resolution, measured in b
 hours according to each client's support calendar, excluding weekends and holidays.
 A background process watches those deadlines and raises alerts before they are breached.
 
-## Planned features
+## Features
 
 - Multi-tenant data isolation with PostgreSQL Row-Level Security
 - Three roles: client, agent and admin
@@ -29,12 +29,15 @@ A background process watches those deadlines and raises alerts before they are b
 - Full audit trail in an append-only events table
 - Background alerts when a ticket is about to breach its SLA, or has breached it
 - Automatic closing of resolved tickets the client does not reopen within 7 days
-- Email notifications to the requester and to the support team
+- Email notifications (plain text and HTML, with a link to the ticket) for status
+  changes, SLA alerts and public comments, to the requester or to the support team
 - Demo data: three clients with different calendars and months of realistic ticket
   history generated through the real services, plus a bulk mode for volume
 - Analytics built on hand-written SQL: SLA compliance, response and resolution times,
   ticket aging, agent workload, category trends and a daily backlog rebuilt from the
   event history, with every index decision measured on 200,000 tickets
+- Web interface without a build step: ticket list, ticket page with the conversation
+  and the allowed transitions, and an analytics dashboard with Chart.js
 
 ## Tech stack
 
@@ -58,7 +61,7 @@ A background process watches those deadlines and raises alerts before they are b
 - [x] **Phase 6 - Background jobs:** SLA alerts, auto-close and email notifications with Celery
 - [x] **Phase 7 - Demo data:** realistic seed data and demo accounts
 - [x] **Phase 8 - Analytics:** SQL dashboard queries, indexes and query plans
-- [ ] **Phase 9 - Frontend:** ticket views and dashboard with Chart.js
+- [x] **Phase 9 - Frontend:** ticket views and dashboard with Chart.js
 - [ ] **Phase 10 - Release:** deployment, screenshots and live demo
 
 ## Getting started
@@ -116,7 +119,7 @@ uv run pre-commit install    # run ruff before each commit
 make up                      # start only PostgreSQL and Redis
 make migrate                 # as helpdesk_owner
 make seed                    # demo clients, accounts and ticket history (~2.5 min)
-make run                     # http://127.0.0.1:8000 (admin at /admin/)
+make run                     # http://127.0.0.1:8000 (Django admin at /admin/)
 ```
 
 `make seed` prints the demo accounts when it finishes (see [Demo data](#demo-data)). To
@@ -142,6 +145,24 @@ two beat schedulers would send every periodic task twice.
 | `make db-roles`         | Create or update the database roles (idempotent)         |
 | `make ps` / `make logs` | Show container status / follow container logs            |
 | `make down`             | Stop and remove all containers                           |
+
+### Web interface
+
+Open <http://127.0.0.1:8000/> and sign in with a [demo account](#demo-data):
+
+| Page | Path | Who |
+|---|---|---|
+| Ticket list, with filters by status, priority and assignee | `/` | Everyone (clients see their company's tickets) |
+| New ticket | `/tickets/new/` | Clients |
+| Ticket: conversation, internal notes, history, transitions and triage | `/tickets/{id}/` | Everyone (internal notes and triage for staff only) |
+| Dashboard with the six analytics charts | `/dashboard/` | Everyone (the client filter and agent workload for staff only) |
+
+The pages are Django templates with no data in them: native JavaScript modules fill them
+from the same JSON API, so the browser goes through the same permissions and Row-Level
+Security as any other client. The access token lives only in memory and the refresh
+token in an `HttpOnly`, `SameSite=Strict` cookie
+([ADR-0006](docs/adr/0006-browser-tokens-refresh-cookie.md)). A strict Content Security
+Policy allows no inline code, and nothing is ever inserted as HTML.
 
 ### API
 
@@ -171,8 +192,9 @@ index kept, added or left out, are in [Analytics](docs/analytics.md).
 Celery runs the periodic jobs: every minute, a set of `INSERT ... SELECT ... ON CONFLICT
 DO NOTHING` statements records the SLA warnings and breaches that have become due; every
 hour, resolved tickets older than 7 days are closed through the state machine. Status
-changes and alerts send emails, enqueued only after the transaction commits. Schedules,
-idempotency and delivery guarantees are in [Background jobs](docs/background-jobs.md).
+changes, alerts and public comments send emails, enqueued only after the transaction
+commits. Schedules, idempotency and delivery guarantees are in
+[Background jobs](docs/background-jobs.md).
 
 ### Demo data
 
