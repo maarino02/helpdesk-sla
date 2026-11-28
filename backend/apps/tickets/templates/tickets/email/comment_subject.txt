@@ -1,0 +1,1 @@
+{% autoescape off %}[{{ ticket.reference }}] Nuevo comentario de {{ comment.author.full_name }}: {{ ticket.title }}{% endautoescape %}

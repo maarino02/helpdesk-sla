@@ -9,5 +9,7 @@ Si el problema continúa, puedes reabrirla. Si no, se cerrará automáticamente 
 Si vuelves a tener el problema, abre una incidencia nueva.
 {% else %}Tu incidencia {{ ticket.reference }} ("{{ ticket.title }}") se ha cerrado.
 {% endif %}
+Ver la incidencia: {{ ticket_url }}
+
 Equipo de soporte
 {% endautoescape %}

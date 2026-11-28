@@ -17,6 +17,7 @@ from apps.core.exceptions import ActionNotAllowed, StateConflict
 from apps.sla.business_time import business_minutes_between
 from apps.sla.services import load_organization_schedule
 from apps.tickets.models import Status, Ticket, TicketComment
+from apps.tickets.services.notifications import COMMENT, notify_on_commit
 from apps.tickets.services.state_machine import transition
 
 STAFF = frozenset({Role.AGENT, Role.ADMIN})
@@ -93,9 +94,13 @@ def add_comment(
         )
 
         if is_internal:
-            # Internal notes are invisible to the client: they neither answer it
-            # nor move the ticket.
+            # Internal notes are invisible to the client: they neither answer it,
+            # nor move the ticket, nor notify anyone.
             return comment
+
+        # Registered inside the transaction: if anything below fails (for example
+        # the transition), the comment rolls back and nobody is emailed about it.
+        notify_on_commit(COMMENT, comment.pk)
 
         if is_staff:
             if locked.first_response_at is None:

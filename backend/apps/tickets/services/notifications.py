@@ -1,14 +1,15 @@
-"""Email notifications for status changes and SLA alerts.
+"""Email notifications for status changes, SLA alerts and public comments.
 
 Flow (at least once delivery):
 1. The service that creates the source row (transition() for a ticket_event,
-   the SLA job for an sla_alert) calls notify_on_commit(kind, id).
+   the SLA job for an sla_alert, add_comment() for a ticket_comment) calls
+   notify_on_commit(kind, id).
 2. After the commit, the `notify` task reads the source and decides the
    recipients with the data current at that moment.
 3. One `send_notification` task per recipient renders and sends one email,
    so an SMTP failure retries only that email.
 
-Only ids travel through the broker: both sources are immutable rows, so the
+Only ids travel through the broker: every source is an immutable row, so the
 email describes exactly what happened at commit time, even if the ticket
 changed afterwards, and no personal data is stored in Redis.
 
@@ -24,9 +25,10 @@ from contextvars import ContextVar
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
-from django.core.mail import EmailMessage
+from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from apps.accounts.models import Role, User
 from apps.tickets.models import (
@@ -35,12 +37,15 @@ from apps.tickets.models import (
     EventType,
     SlaAlert,
     Status,
+    Ticket,
+    TicketComment,
     TicketEvent,
 )
 
 STATUS_CHANGE = "status_change"
 SLA_ALERT = "sla_alert"
-KINDS = (STATUS_CHANGE, SLA_ALERT)
+COMMENT = "comment"
+KINDS = (STATUS_CHANGE, SLA_ALERT, COMMENT)
 
 # Status changes the requester hears about: the ones that need their action
 # (pending), give them a chance to react (resolved) or end the ticket (closed).
@@ -95,6 +100,8 @@ def recipient_ids(kind: str, source_id: int) -> list[int]:
         return _status_change_recipients(_event(source_id))
     if kind == SLA_ALERT:
         return _alert_recipients(_alert(source_id))
+    if kind == COMMENT:
+        return _comment_recipients(_comment(source_id))
     raise ValueError(f"Unknown notification kind {kind!r}.")
 
 
@@ -120,12 +127,33 @@ def _alert_recipients(alert: SlaAlert) -> list[int]:
     )
 
 
+def _comment_recipients(comment: TicketComment) -> list[int]:
+    # add_comment() never enqueues internal notes; checked again because the
+    # recipient here is a client, who must never read one.
+    if comment.is_internal:
+        return []
+    ticket = comment.ticket
+    # The other side of the conversation, which is never the author: the assignee
+    # is staff (checked by the services that assign) and the requester is always
+    # a client (composite foreign key in the database).
+    # A client comment on an unassigned ticket notifies nobody: it is in the
+    # unassigned queue already, and if it waits too long the SLA alerts escalate
+    # it to the admins.
+    other_side = ticket.assignee if comment.author.role == Role.CLIENT else ticket.requester
+    if other_side is None or not other_side.is_active:
+        return []
+    return [other_side.pk]
+
+
 # Messages
 
 
-def build_message(kind: str, source_id: int, recipient_id: int) -> EmailMessage:
-    """The email for one recipient. Reads the database: call it inside an RLS
-    context, and send it outside the transaction."""
+def build_message(kind: str, source_id: int, recipient_id: int) -> EmailMultiAlternatives:
+    """The email for one recipient, as plain text plus an HTML alternative.
+
+    Reads the database: call it inside an RLS context, and send it outside the
+    transaction.
+    """
     recipient = User.objects.get(pk=recipient_id)
     if kind == STATUS_CHANGE:
         event = _event(source_id)
@@ -153,21 +181,50 @@ def build_message(kind: str, source_id: int, recipient_id: int) -> EmailMessage:
             "time_zone": calendar.timezone,
             "as_admin": recipient_id != alert.ticket.assignee_id,
         }
+    elif kind == COMMENT:
+        comment = _comment(source_id)
+        template = "comment"
+        context = {
+            "ticket": comment.ticket,
+            "comment": comment,
+            "to_requester": recipient_id == comment.ticket.requester_id,
+        }
     else:
         raise ValueError(f"Unknown notification kind {kind!r}.")
 
     context["recipient"] = recipient
+    context["ticket_url"] = ticket_url(context["ticket"])
     subject = render_to_string(f"tickets/email/{template}_subject.txt", context)
+    # Plain text first: clients that cannot show HTML fall back to it, and a
+    # message without a text part looks more like spam to filters.
     body = render_to_string(f"tickets/email/{template}_body.txt", context)
+    # Autoescaped, unlike the text part: titles and comments are written by users.
+    html = render_to_string(f"tickets/email/{template}_body.html", context)
     # A header cannot contain line breaks: the subject template is one line,
     # but the trailing newline of the file must go.
-    return EmailMessage(subject=" ".join(subject.split()), body=body, to=[recipient.email])
+    message = EmailMultiAlternatives(
+        subject=" ".join(subject.split()), body=body, to=[recipient.email]
+    )
+    message.attach_alternative(html, "text/html")
+    return message
+
+
+def ticket_url(ticket: Ticket) -> str:
+    """Absolute link to the ticket page. Without a session, the page sends the
+    reader to the login, which brings them back here afterwards."""
+    return settings.SITE_URL + reverse("web:ticket", args=[ticket.pk])
 
 
 def _event(event_id: int) -> TicketEvent:
     return TicketEvent.objects.select_related("ticket__organization", "ticket__requester").get(
         pk=event_id
     )
+
+
+def _comment(comment_id: int) -> TicketComment:
+    return TicketComment.objects.select_related(
+        "author", "ticket__requester", "ticket__assignee"
+    ).get(pk=comment_id)
 
 
 def _alert(alert_id: int) -> SlaAlert:

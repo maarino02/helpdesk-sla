@@ -21,7 +21,7 @@ harmless. The SLA rules they apply are in [`sla.md`](sla.md); the status changes
 |---|---|---|
 | `apps.tickets.tasks.raise_sla_alerts` | Beat, every minute (`expires` 60 s) | Records the SLA warnings and breaches that have become due and enqueues their notifications. |
 | `apps.tickets.tasks.auto_close_resolved` | Beat, every hour (`expires` 3600 s) | Closes the tickets resolved more than `AUTO_CLOSE_AFTER` (7 calendar days) ago. |
-| `apps.tickets.tasks.notify` | After the commit of a status change or a new SLA alert | Decides the recipients and enqueues one email per recipient. |
+| `apps.tickets.tasks.notify` | After the commit of a status change, a new SLA alert or a public comment | Decides the recipients and enqueues one email per recipient. |
 | `apps.tickets.tasks.send_notification` | Enqueued by `notify` | Renders and sends one email; retried on SMTP and network errors. |
 | `apps.core.tasks.ping` | Beat, every 5 minutes | Heartbeat: proves the beat → broker → worker chain works. |
 
@@ -98,19 +98,26 @@ not read again and the loop always ends.
 
 ## Email notifications
 
-`apps/tickets/services/notifications.py`, plain-text templates in
-`apps/tickets/templates/tickets/email/`.
+`apps/tickets/services/notifications.py`, templates in
+`apps/tickets/templates/tickets/email/`. Each email has a plain-text part and an HTML
+alternative (`base.html` is the shared layout, with inline styles because many email
+clients drop `<style>` blocks), and both link to the ticket page at
+`SITE_URL/tickets/{id}/`. The HTML templates keep autoescaping on, since titles and
+comments are written by users; a test fails if one of them turns it off.
 
 | Source | Recipient | Not sent when |
 |---|---|---|
 | Status change to `pending`, `resolved` or `closed` | The requester | The requester made the change, or is inactive |
 | SLA alert (warning or breach) | The assignee | No active assignee: sent to every active admin instead |
+| Public comment by the staff | The requester | The requester is inactive |
+| Comment by a client (the requester or a colleague) | The assignee | No active assignee: nobody is notified (the ticket is in the unassigned queue, and the SLA alerts escalate it) |
+| Internal note | Nobody | Always |
 
 Flow:
 
 1. The service that writes the source row calls `notify_on_commit(kind, id)`:
    `transition()` for the `ticket_event` of a status change, the SLA job for each new
-   `sla_alert`. The task is enqueued only when the outermost transaction commits; if it
+   `sla_alert`, `add_comment()` for each public `ticket_comment`. The task is enqueued only when the outermost transaction commits; if it
    rolls back, nothing is sent. `robust=True`: if the broker is down, the error is logged
    and the request that already committed still succeeds.
 2. `notify(kind, id)` reads the source, decides the recipients with current data and
@@ -120,8 +127,8 @@ Flow:
    It is retried on `SMTPException` and `OSError`, with exponential backoff, up to 5
    times. `EMAIL_TIMEOUT` (10 s) stops a silent SMTP server from blocking a worker.
 
-Only ids travel through the broker. Both sources are immutable (`ticket_event` is insert
-only, alerts are never edited), so the email describes what happened at commit time even
+Only ids travel through the broker. Every source is immutable (`ticket_event` is insert
+only, alerts and comments are never edited), so the email describes what happened at commit time even
 if the ticket changed afterwards, and no personal data is stored in Redis.
 
 Deadlines in alert emails are shown in the time zone of the client's business calendar.

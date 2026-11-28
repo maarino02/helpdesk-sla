@@ -57,7 +57,7 @@ curl -s http://127.0.0.1:8000/api/me/ -H "Authorization: Bearer <access>"
 | `PATCH /api/tickets/{id}/` | Agents, admins | Change `assignee`, `priority` or `category`; `200` with the ticket. |
 | `POST /api/tickets/{id}/transitions/` | Depends on the transition | `{"to_status": ...}`; `200` with the ticket. |
 | `GET /api/tickets/{id}/comments/` | Any user | The conversation, oldest first. Clients never see internal notes. |
-| `POST /api/tickets/{id}/comments/` | Any user | `{"body": ..., "is_internal": false}`; `201` with the comment. |
+| `POST /api/tickets/{id}/comments/` | Any user | `{"body": ..., "is_internal": false}`; `201` with the comment. A public comment emails the other side of the conversation ([notifications](background-jobs.md#email-notifications)). |
 | `GET /api/tickets/{id}/events/` | Any user | The ticket history, oldest first. |
 | `GET /api/categories/` | Any user | Active categories, to fill the creation form. Not paginated. |
 | `GET /api/staff/` | Agents, admins | Active agents and admins by name, `{id, full_name, role}`: whom a ticket can be assigned to. Not paginated. |

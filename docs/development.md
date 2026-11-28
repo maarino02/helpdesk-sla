@@ -34,6 +34,7 @@ for it to time out.
 | `DRF_NUM_PROXIES` | Login throttling | Number of trusted proxies in front of the app. Default `0`: the client address is `REMOTE_ADDR`. Set it behind a proxy, or every client shares the proxy's limit. |
 | `EMAIL_URL` | Notifications | Email backend as a URL, e.g. `smtp+tls://user:password@host:587`. Default `consolemail://`: emails are printed to the worker log. Required in production. |
 | `DEFAULT_FROM_EMAIL` | Notifications | Sender of the notifications. Required in production. |
+| `SITE_URL` | Notifications | Scheme and host of the links to the tickets in the emails, e.g. `https://helpdesk.example.com`. Default `http://127.0.0.1:8000`. Required in production. Never taken from the request: the `Host` header is set by the client. |
 | `DEMO_PASSWORD` | `seed_demo` | Password of every demo account. Development defaults to `demo1234`; elsewhere the command refuses to run without it. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS`, `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SECURE_HSTS_SECONDS`, `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` | Production | HTTPS settings. HSTS starts at 0. |
 | `WEB_CONCURRENCY` | Gunicorn | Worker processes in the image (default 2). |
@@ -344,6 +345,6 @@ explicit decision.
 | `The row-level security context needs an open transaction` | `set_context` called in autocommit mode; wrap the code in `transaction.atomic()`. |
 | `A durable atomic block cannot be nested` | `system_context()` used inside a request or another transaction. |
 | 429 on login | Login throttling. Wait a minute, or locally clear the cache database: `docker compose exec redis redis-cli -n 1 FLUSHDB`. |
-| No email after a status change or an alert | With the default `EMAIL_URL=consolemail://` emails are printed in the worker log: check that a worker is running. The requester is not told about their own changes, and only `pending`, `resolved` and `closed` are notified. |
+| No email after a status change or an alert | With the default `EMAIL_URL=consolemail://` emails are printed in the worker log: check that a worker is running. The requester is not told about their own changes, and only `pending`, `resolved` and `closed` are notified. A client comment on an unassigned ticket notifies nobody, and internal notes never send email. |
 | A script or style does not apply; the browser console mentions Content Security Policy | Inline code: move it to a file under `static/`. `apps/core/tests/test_csp.py` checks the admin pages the same way. |
 | Compose fails with `required variable ... is missing` | A required variable is not in `.env`; compare it with `.env.example`. |
