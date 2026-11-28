@@ -40,12 +40,21 @@ COPY backend/ /app/backend/
 
 WORKDIR /app/backend
 
-# Static files are part of the image. Settings only need placeholder values to
-# load: collectstatic opens no database or Redis connection.
+# Static files are part of the image. The production settings refuse to load
+# without every required variable, so each one gets a placeholder here: one per
+# env(...) call without a default in config/settings/base.py and prod.py.
+# collectstatic opens no database, Redis or SMTP connection and signs nothing.
+# Set on the RUN line, not with ENV, so none of them stays in the image: at
+# runtime the real values are still required.
 RUN DJANGO_SECRET_KEY=build-only \
+    JWT_SIGNING_KEY=build-only \
     DJANGO_ALLOWED_HOSTS=localhost \
     DATABASE_URL=postgres://build@localhost/build \
     REDIS_URL=redis://localhost:6379/0 \
+    REDIS_CACHE_URL=redis://localhost:6379/1 \
+    EMAIL_URL=consolemail:// \
+    DEFAULT_FROM_EMAIL=build@localhost \
+    SITE_URL=http://localhost \
     python manage.py collectstatic --noinput
 
 # Files stay owned by root: the app user can read the code but not modify it.
