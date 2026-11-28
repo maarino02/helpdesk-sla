@@ -27,6 +27,8 @@ x-app: &app
     # Emails are printed to the worker log (docker compose logs worker).
     EMAIL_URL: consolemail://
     DEFAULT_FROM_EMAIL: HelpDesk SLA <no-reply@localhost>
+    # Links in the emails: the web service published on the host.
+    SITE_URL: http://localhost:8000
 
 services:
   db:

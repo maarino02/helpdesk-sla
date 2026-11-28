@@ -98,8 +98,12 @@ not read again and the loop always ends.
 
 ## Email notifications
 
-`apps/tickets/services/notifications.py`, plain-text templates in
-`apps/tickets/templates/tickets/email/`.
+`apps/tickets/services/notifications.py`, templates in
+`apps/tickets/templates/tickets/email/`. Each email has a plain-text part and an HTML
+alternative (`base.html` is the shared layout, with inline styles because many email
+clients drop `<style>` blocks), and both link to the ticket page at
+`SITE_URL/tickets/{id}/`. The HTML templates keep autoescaping on, since titles and
+comments are written by users; a test fails if one of them turns it off.
 
 | Source | Recipient | Not sent when |
 |---|---|---|

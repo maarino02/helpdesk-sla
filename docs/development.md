@@ -34,6 +34,7 @@ for it to time out.
 | `DRF_NUM_PROXIES` | Login throttling | Number of trusted proxies in front of the app. Default `0`: the client address is `REMOTE_ADDR`. Set it behind a proxy, or every client shares the proxy's limit. |
 | `EMAIL_URL` | Notifications | Email backend as a URL, e.g. `smtp+tls://user:password@host:587`. Default `consolemail://`: emails are printed to the worker log. Required in production. |
 | `DEFAULT_FROM_EMAIL` | Notifications | Sender of the notifications. Required in production. |
+| `SITE_URL` | Notifications | Scheme and host of the links to the tickets in the emails, e.g. `https://helpdesk.example.com`. Default `http://127.0.0.1:8000`. Required in production. Never taken from the request: the `Host` header is set by the client. |
 | `DEMO_PASSWORD` | `seed_demo` | Password of every demo account. Development defaults to `demo1234`; elsewhere the command refuses to run without it. |
 | `DJANGO_CSRF_TRUSTED_ORIGINS`, `DJANGO_SECURE_SSL_REDIRECT`, `DJANGO_SECURE_HSTS_SECONDS`, `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS` | Production | HTTPS settings. HSTS starts at 0. |
 | `WEB_CONCURRENCY` | Gunicorn | Worker processes in the image (default 2). |

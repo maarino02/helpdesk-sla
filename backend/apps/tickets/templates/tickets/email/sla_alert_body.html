@@ -1,0 +1,12 @@
+{% extends "tickets/email/base.html" %}
+
+{% block content %}
+{% if breached %}
+<p>La incidencia <strong>{{ ticket.reference }}</strong> ("{{ ticket.title }}") ha superado su plazo de {{ kind.label|lower }}, que vencía el {{ due_at }} ({{ time_zone }}).</p>
+{% else %}
+<p>La incidencia <strong>{{ ticket.reference }}</strong> ("{{ ticket.title }}") ha consumido el 80 % de su plazo de {{ kind.label|lower }}, que vence el {{ due_at }} ({{ time_zone }}).</p>
+{% endif %}
+{% if as_admin %}
+<p>Recibes este aviso como administrador porque la incidencia no tiene un asignado activo.</p>
+{% endif %}
+{% endblock %}

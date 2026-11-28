@@ -1,4 +1,5 @@
 import datetime
+from pathlib import Path
 from smtplib import SMTPException
 
 import pytest
@@ -15,6 +16,7 @@ from apps.tickets.services.notifications import (
     notify_on_commit,
     recipient_ids,
     suppressed,
+    ticket_url,
 )
 from apps.tickets.services.state_machine import transition
 from apps.tickets.tests.factories import SlaAlertFactory, TicketFactory
@@ -29,6 +31,13 @@ def enqueued(monkeypatch):
     calls = []
     monkeypatch.setattr(tasks.notify, "delay", lambda *args: calls.append(args))
     return calls
+
+
+def html_of(message):
+    """The HTML alternative of an email (there must be exactly one)."""
+    [(content, mimetype)] = message.alternatives
+    assert mimetype == "text/html"
+    return content
 
 
 def status_event(ticket, to_status, actor=None):
@@ -136,6 +145,7 @@ def test_resolved_email_names_the_ticket_and_the_auto_close_window():
     assert message.subject == f"[{ticket.reference}] Incidencia resuelta: Impresora & escáner"
     assert ticket.requester.full_name in message.body
     assert "se cerrará automáticamente dentro de 7 días" in message.body
+    assert "se cerrará automáticamente dentro de 7 días" in html_of(message)
 
 
 def test_pending_email_asks_for_information():
@@ -155,6 +165,7 @@ def test_auto_close_email_says_so():
 
     assert message.subject.startswith(f"[{ticket.reference}] Incidencia cerrada")
     assert "se ha cerrado automáticamente tras 7 días" in message.body
+    assert "se ha cerrado automáticamente tras 7 días" in html_of(message)
 
 
 def test_alert_email_shows_the_deadline_in_the_business_time_zone():
@@ -175,7 +186,9 @@ def test_alert_email_shows_the_deadline_in_the_business_time_zone():
         f"[{alert.ticket.reference}] SLA incumplido (primera respuesta): {alert.ticket.title}"
     )
     assert "que vencía el 24/11/2026 11:00 (Europe/Madrid)" in message.body
+    assert "que vencía el 24/11/2026 11:00 (Europe/Madrid)" in html_of(message)
     assert "como administrador" not in message.body
+    assert "como administrador" not in html_of(message)
 
 
 def test_alert_email_to_an_admin_explains_why():
@@ -186,6 +199,61 @@ def test_alert_email_to_an_admin_explains_why():
 
     assert message.subject.startswith(f"[{alert.ticket.reference}] SLA en riesgo (resolución)")
     assert "como administrador" in message.body
+    assert "como administrador" in html_of(message)
+
+
+def status_change_message(ticket):
+    event = status_event(ticket, Status.RESOLVED, actor=AgentUserFactory())
+    return build_message(STATUS_CHANGE, event.pk, ticket.requester_id)
+
+
+def sla_alert_message(ticket):
+    alert = SlaAlertFactory(ticket=ticket)
+    return build_message(SLA_ALERT, alert.pk, AdminUserFactory().pk)
+
+
+EVERY_KIND = pytest.mark.parametrize(
+    "make_message", [status_change_message, sla_alert_message], ids=[STATUS_CHANGE, SLA_ALERT]
+)
+
+
+@EVERY_KIND
+def test_every_email_links_to_the_ticket_page(make_message, settings):
+    settings.SITE_URL = "https://helpdesk.example.com"
+    ticket = TicketFactory()
+
+    message = make_message(ticket)
+
+    url = f"https://helpdesk.example.com/tickets/{ticket.pk}/"
+    assert ticket_url(ticket) == url
+    assert f"Ver la incidencia: {url}" in message.body
+    assert f'href="{url}"' in html_of(message)
+
+
+@EVERY_KIND
+def test_html_escapes_what_users_write_and_text_keeps_it_as_is(make_message):
+    title = '<img src="x" onerror="alert(1)"> & <a href="https://phishing.example">'
+    ticket = TicketFactory(title=title)
+
+    message = make_message(ticket)
+
+    html = html_of(message)
+    assert "<img" not in html
+    assert '<a href="https://phishing' not in html  # The page's own link is a real <a>.
+    assert "&lt;img src=&quot;x&quot; onerror=&quot;alert(1)&quot;&gt; &amp; &lt;a" in html
+    # Plain text is never interpreted as markup, so escaping it would only garble it.
+    assert title in message.body
+
+
+def test_no_html_email_template_turns_autoescape_off():
+    # The test above only covers the variables it renders; this guard covers new
+    # templates and new variables too.
+    templates = Path(__file__).resolve().parents[1] / "templates" / "tickets" / "email"
+    html_templates = sorted(templates.glob("*.html"))
+
+    assert html_templates  # The glob must find something, or the guard checks nothing.
+    for template in html_templates:
+        assert "autoescape" not in template.read_text(encoding="utf-8"), template.name
 
 
 # Enqueueing after the commit
@@ -328,6 +396,7 @@ def test_send_notification_sends_one_email():
     [message] = mail.outbox
     assert message.to == [ticket.requester.email]
     assert message.from_email == "HelpDesk SLA <no-reply@localhost>"
+    assert html_of(message).startswith("<!doctype html>")
 
 
 def test_send_notification_retries_smtp_and_network_errors_only():

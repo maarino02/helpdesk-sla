@@ -17,6 +17,8 @@ CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 # Required: with the base default, production emails would only reach the log.
 vars().update(env.email_url("EMAIL_URL"))
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL")
+# Required: with the base default, every link in the emails would point to 127.0.0.1.
+SITE_URL = env("SITE_URL").rstrip("/")
 
 # TLS is terminated by the platform's proxy, which forwards the original scheme.
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

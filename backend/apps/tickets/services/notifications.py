@@ -24,9 +24,10 @@ from contextvars import ContextVar
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
-from django.core.mail import EmailMessage
+from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from apps.accounts.models import Role, User
 from apps.tickets.models import (
@@ -35,6 +36,7 @@ from apps.tickets.models import (
     EventType,
     SlaAlert,
     Status,
+    Ticket,
     TicketEvent,
 )
 
@@ -123,9 +125,12 @@ def _alert_recipients(alert: SlaAlert) -> list[int]:
 # Messages
 
 
-def build_message(kind: str, source_id: int, recipient_id: int) -> EmailMessage:
-    """The email for one recipient. Reads the database: call it inside an RLS
-    context, and send it outside the transaction."""
+def build_message(kind: str, source_id: int, recipient_id: int) -> EmailMultiAlternatives:
+    """The email for one recipient, as plain text plus an HTML alternative.
+
+    Reads the database: call it inside an RLS context, and send it outside the
+    transaction.
+    """
     recipient = User.objects.get(pk=recipient_id)
     if kind == STATUS_CHANGE:
         event = _event(source_id)
@@ -157,11 +162,26 @@ def build_message(kind: str, source_id: int, recipient_id: int) -> EmailMessage:
         raise ValueError(f"Unknown notification kind {kind!r}.")
 
     context["recipient"] = recipient
+    context["ticket_url"] = ticket_url(context["ticket"])
     subject = render_to_string(f"tickets/email/{template}_subject.txt", context)
+    # Plain text first: clients that cannot show HTML fall back to it, and a
+    # message without a text part looks more like spam to filters.
     body = render_to_string(f"tickets/email/{template}_body.txt", context)
+    # Autoescaped, unlike the text part: titles and comments are written by users.
+    html = render_to_string(f"tickets/email/{template}_body.html", context)
     # A header cannot contain line breaks: the subject template is one line,
     # but the trailing newline of the file must go.
-    return EmailMessage(subject=" ".join(subject.split()), body=body, to=[recipient.email])
+    message = EmailMultiAlternatives(
+        subject=" ".join(subject.split()), body=body, to=[recipient.email]
+    )
+    message.attach_alternative(html, "text/html")
+    return message
+
+
+def ticket_url(ticket: Ticket) -> str:
+    """Absolute link to the ticket page. Without a session, the page sends the
+    reader to the login, which brings them back here afterwards."""
+    return settings.SITE_URL + reverse("web:ticket", args=[ticket.pk])
 
 
 def _event(event_id: int) -> TicketEvent:

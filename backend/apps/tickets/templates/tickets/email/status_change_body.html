@@ -1,0 +1,17 @@
+{% extends "tickets/email/base.html" %}
+
+{% block content %}
+{% if status == "pending" %}
+<p>Para seguir con tu incidencia <strong>{{ ticket.reference }}</strong> ("{{ ticket.title }}") necesitamos más información. Puedes responder con un comentario en la incidencia; en cuanto lo hagas, volveremos a trabajar en ella.</p>
+{% elif status == "resolved" %}
+<p>Hemos resuelto tu incidencia <strong>{{ ticket.reference }}</strong> ("{{ ticket.title }}").</p>
+<p>Si el problema continúa, puedes reabrirla. Si no, se cerrará automáticamente dentro de {{ auto_close_days }} días.</p>
+{% elif auto_closed %}
+<p>Tu incidencia <strong>{{ ticket.reference }}</strong> ("{{ ticket.title }}") se ha cerrado automáticamente tras {{ auto_close_days }} días resuelta sin cambios.</p>
+<p>Si vuelves a tener el problema, abre una incidencia nueva.</p>
+{% else %}
+<p>Tu incidencia <strong>{{ ticket.reference }}</strong> ("{{ ticket.title }}") se ha cerrado.</p>
+{% endif %}
+{% endblock %}
+
+{% block signature %}Equipo de soporte{% endblock %}

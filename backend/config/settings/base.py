@@ -173,6 +173,10 @@ vars().update(env.email_url("EMAIL_URL", default="consolemail://"))
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="HelpDesk SLA <no-reply@localhost>")
 # Without a timeout, an SMTP server that stops answering blocks the worker forever.
 EMAIL_TIMEOUT = 10  # seconds
+# Scheme and host of the links in the emails, without a trailing slash. From the
+# environment: a Celery task has no request to take the host from, and taking it
+# from a request would trust the Host header, which the client controls.
+SITE_URL = env("SITE_URL", default="http://127.0.0.1:8000").rstrip("/")
 
 # Resolved tickets the client neither confirms nor reopens are closed after this
 # much calendar time (not business time: it is the client's window to react).
