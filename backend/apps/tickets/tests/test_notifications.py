@@ -9,7 +9,9 @@ from django.db import transaction
 from apps.accounts.tests.factories import AdminUserFactory, AgentUserFactory, ClientUserFactory
 from apps.tickets import tasks
 from apps.tickets.models import AlertKind, AlertLevel, EventType, SlaAlert, Status, TicketEvent
+from apps.tickets.services.comments import add_comment
 from apps.tickets.services.notifications import (
+    COMMENT,
     SLA_ALERT,
     STATUS_CHANGE,
     build_message,
@@ -19,7 +21,7 @@ from apps.tickets.services.notifications import (
     ticket_url,
 )
 from apps.tickets.services.state_machine import transition
-from apps.tickets.tests.factories import SlaAlertFactory, TicketFactory
+from apps.tickets.tests.factories import SlaAlertFactory, TicketCommentFactory, TicketFactory
 from config.celery import app
 
 pytestmark = pytest.mark.django_db
@@ -126,9 +128,73 @@ def test_alert_for_an_inactive_assignee_goes_to_the_admins():
     assert recipient_ids(SLA_ALERT, alert.pk) == [admin.pk]
 
 
+# Recipients of comments: the other side of the conversation, never the author
+
+
+def test_public_staff_comment_goes_to_the_requester():
+    agent = AgentUserFactory()
+    ticket = TicketFactory(status=Status.OPEN, assignee=agent)
+    comment = TicketCommentFactory(ticket=ticket, author=agent)
+
+    assert recipient_ids(COMMENT, comment.pk) == [ticket.requester_id]
+
+
+def test_admin_comment_goes_to_the_requester_not_to_the_assignee():
+    ticket = TicketFactory(status=Status.OPEN, assignee=AgentUserFactory())
+    comment = TicketCommentFactory(ticket=ticket, author=AdminUserFactory())
+
+    assert recipient_ids(COMMENT, comment.pk) == [ticket.requester_id]
+
+
+def test_requester_comment_goes_to_the_assignee():
+    agent = AgentUserFactory()
+    ticket = TicketFactory(status=Status.OPEN, assignee=agent)
+    comment = TicketCommentFactory(ticket=ticket)  # By the requester.
+
+    assert recipient_ids(COMMENT, comment.pk) == [agent.pk]
+
+
+def test_colleague_comment_goes_to_the_assignee():
+    agent = AgentUserFactory()
+    ticket = TicketFactory(status=Status.OPEN, assignee=agent)
+    colleague = ClientUserFactory(organization=ticket.organization)
+    comment = TicketCommentFactory(ticket=ticket, author=colleague)
+
+    assert recipient_ids(COMMENT, comment.pk) == [agent.pk]
+
+
+def test_client_comment_on_an_unassigned_ticket_notifies_nobody():
+    # The ticket is in the unassigned queue already; the SLA alerts escalate it.
+    comment = TicketCommentFactory(ticket=TicketFactory(assignee=None))
+
+    assert recipient_ids(COMMENT, comment.pk) == []
+
+
+def test_client_comment_for_an_inactive_assignee_notifies_nobody():
+    ticket = TicketFactory(status=Status.OPEN, assignee=AgentUserFactory(is_active=False))
+    comment = TicketCommentFactory(ticket=ticket)
+
+    assert recipient_ids(COMMENT, comment.pk) == []
+
+
+def test_staff_comment_for_an_inactive_requester_notifies_nobody():
+    ticket = TicketFactory(status=Status.OPEN, requester__is_active=False)
+    comment = TicketCommentFactory(ticket=ticket, author=AgentUserFactory())
+
+    assert recipient_ids(COMMENT, comment.pk) == []
+
+
+def test_internal_note_notifies_nobody():
+    agent = AgentUserFactory()
+    ticket = TicketFactory(status=Status.OPEN, assignee=agent)
+    note = TicketCommentFactory(ticket=ticket, author=agent, is_internal=True)
+
+    assert recipient_ids(COMMENT, note.pk) == []
+
+
 def test_unknown_kind_is_rejected():
     with pytest.raises(ValueError, match="Unknown notification kind"):
-        recipient_ids("comment", 1)
+        recipient_ids("mention", 1)
 
 
 # Messages
@@ -202,6 +268,56 @@ def test_alert_email_to_an_admin_explains_why():
     assert "como administrador" in html_of(message)
 
 
+def comment_message(ticket, body="Ya está, prueba ahora."):
+    agent = AgentUserFactory(full_name="Laura Gómez")
+    comment = TicketCommentFactory(ticket=ticket, author=agent, body=body)
+    return build_message(COMMENT, comment.pk, ticket.requester_id)
+
+
+def test_staff_comment_email_quotes_the_comment_for_the_requester():
+    ticket = TicketFactory(title="Impresora & escáner")
+
+    message = comment_message(ticket, body="Línea uno.\nLínea dos.")
+
+    assert message.to == [ticket.requester.email]
+    assert message.subject == (
+        f"[{ticket.reference}] Nuevo comentario de Laura Gómez: Impresora & escáner"
+    )
+    assert "Laura Gómez ha respondido en tu incidencia" in message.body
+    assert "Línea uno.\nLínea dos." in message.body
+    html = html_of(message)
+    assert "Laura Gómez ha respondido en tu incidencia" in html
+    assert "Línea uno.<br>Línea dos." in html
+
+
+def test_client_comment_email_tells_the_assignee_it_is_theirs():
+    agent = AgentUserFactory()
+    ticket = TicketFactory(status=Status.OPEN, assignee=agent)
+    comment = TicketCommentFactory(ticket=ticket)
+
+    message = build_message(COMMENT, comment.pk, agent.pk)
+
+    assert message.to == [agent.email]
+    assert f"{ticket.requester.full_name} ha comentado en la incidencia" in message.body
+    assert "que tienes asignada" in message.body
+    assert "que tienes asignada" in html_of(message)
+
+
+def test_comment_html_escapes_the_body_before_adding_line_breaks():
+    body = '<a href="https://phishing.example">Pulsa aquí</a>\n<img src="x">'
+
+    message = comment_message(TicketFactory(), body=body)
+
+    html = html_of(message)
+    assert '<a href="https://phishing' not in html
+    assert "<img" not in html
+    assert (
+        "&lt;a href=&quot;https://phishing.example&quot;&gt;Pulsa aquí&lt;/a&gt;<br>"
+        "&lt;img src=&quot;x&quot;&gt;"
+    ) in html
+    assert body in message.body
+
+
 def status_change_message(ticket):
     event = status_event(ticket, Status.RESOLVED, actor=AgentUserFactory())
     return build_message(STATUS_CHANGE, event.pk, ticket.requester_id)
@@ -213,7 +329,9 @@ def sla_alert_message(ticket):
 
 
 EVERY_KIND = pytest.mark.parametrize(
-    "make_message", [status_change_message, sla_alert_message], ids=[STATUS_CHANGE, SLA_ALERT]
+    "make_message",
+    [status_change_message, sla_alert_message, comment_message],
+    ids=[STATUS_CHANGE, SLA_ALERT, COMMENT],
 )
 
 
@@ -299,6 +417,57 @@ def test_rolled_back_transition_enqueues_nothing(enqueued, django_capture_on_com
     assert enqueued == []
 
 
+def test_public_comment_enqueues_the_notification_after_the_commit(
+    enqueued, django_capture_on_commit_callbacks
+):
+    ticket = TicketFactory(status=Status.OPEN, assignee=AgentUserFactory())
+
+    with django_capture_on_commit_callbacks(execute=True):
+        comment = add_comment(ticket, ticket.requester, "¿Alguna novedad?")
+        assert enqueued == []  # not before the commit
+
+    assert enqueued == [(COMMENT, comment.pk)]
+
+
+def test_internal_note_enqueues_nothing(enqueued, django_capture_on_commit_callbacks):
+    agent = AgentUserFactory()
+    ticket = TicketFactory(status=Status.OPEN, assignee=agent)
+
+    with django_capture_on_commit_callbacks(execute=True) as callbacks:
+        add_comment(ticket, agent, "Parece un problema de red.", is_internal=True)
+
+    assert callbacks == []
+
+
+def test_first_reply_to_a_new_ticket_enqueues_only_the_comment(
+    enqueued, django_capture_on_commit_callbacks
+):
+    # The reply also moves the ticket new -> open, which is not a notified status:
+    # the requester gets one email, about the comment.
+    ticket = TicketFactory()
+    assert ticket.status == Status.NEW
+
+    with django_capture_on_commit_callbacks(execute=True):
+        comment = add_comment(ticket, AgentUserFactory(), "Lo miramos.")
+
+    assert enqueued == [(COMMENT, comment.pk)]
+
+
+def test_rolled_back_comment_enqueues_nothing(enqueued, django_capture_on_commit_callbacks):
+    ticket = TicketFactory(status=Status.OPEN, assignee=AgentUserFactory())
+
+    with (
+        django_capture_on_commit_callbacks(execute=True) as callbacks,
+        pytest.raises(RuntimeError),
+        transaction.atomic(),
+    ):
+        add_comment(ticket, ticket.requester, "¿Alguna novedad?")
+        raise RuntimeError("the request fails after the comment")
+
+    assert callbacks == []
+    assert enqueued == []
+
+
 def test_auto_close_notifies_through_the_transition(enqueued, django_capture_on_commit_callbacks):
     ticket = TicketFactory(
         resolved=True,
@@ -335,7 +504,7 @@ def test_alert_job_enqueues_one_notification_per_new_alert(
 
 def test_notify_on_commit_rejects_unknown_kinds():
     with pytest.raises(ValueError, match="Unknown notification kind"):
-        notify_on_commit("comment", 1)
+        notify_on_commit("mention", 1)
 
 
 # Suppression (the demo seed writes past history that nobody must hear about)

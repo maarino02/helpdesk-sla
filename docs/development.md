@@ -345,6 +345,6 @@ explicit decision.
 | `The row-level security context needs an open transaction` | `set_context` called in autocommit mode; wrap the code in `transaction.atomic()`. |
 | `A durable atomic block cannot be nested` | `system_context()` used inside a request or another transaction. |
 | 429 on login | Login throttling. Wait a minute, or locally clear the cache database: `docker compose exec redis redis-cli -n 1 FLUSHDB`. |
-| No email after a status change or an alert | With the default `EMAIL_URL=consolemail://` emails are printed in the worker log: check that a worker is running. The requester is not told about their own changes, and only `pending`, `resolved` and `closed` are notified. |
+| No email after a status change or an alert | With the default `EMAIL_URL=consolemail://` emails are printed in the worker log: check that a worker is running. The requester is not told about their own changes, and only `pending`, `resolved` and `closed` are notified. A client comment on an unassigned ticket notifies nobody, and internal notes never send email. |
 | A script or style does not apply; the browser console mentions Content Security Policy | Inline code: move it to a file under `static/`. `apps/core/tests/test_csp.py` checks the admin pages the same way. |
 | Compose fails with `required variable ... is missing` | A required variable is not in `.env`; compare it with `.env.example`. |

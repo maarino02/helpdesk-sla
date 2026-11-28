@@ -53,6 +53,50 @@ def test_resolving_a_ticket_emails_the_requester(open_ticket, monkeypatch):
     assert "Incidencia resuelta" in message.subject
 
 
+@pytest.fixture
+def run_tasks_inline(monkeypatch):
+    monkeypatch.setattr(tasks.notify, "delay", tasks.notify)
+    monkeypatch.setattr(tasks.send_notification, "delay", tasks.send_notification)
+
+
+def comment(api, ticket, body, **extra):
+    return api.post(f"/api/tickets/{ticket.pk}/comments/", {"body": body, **extra})
+
+
+@pytest.mark.usefixtures("run_tasks_inline")
+def test_client_comment_emails_the_assignee(open_ticket):
+    ticket, agent = open_ticket
+
+    response = comment(logged_in(ticket.requester), ticket, "Sigue sin funcionar.")
+
+    assert response.status_code == 201
+    [message] = mail.outbox
+    assert message.to == [agent.email]
+    assert "Sigue sin funcionar." in message.body
+
+
+@pytest.mark.usefixtures("run_tasks_inline")
+def test_agent_comment_emails_the_requester(open_ticket):
+    ticket, agent = open_ticket
+
+    response = comment(logged_in(agent), ticket, "¿Puedes reiniciar el equipo?")
+
+    assert response.status_code == 201
+    [message] = mail.outbox
+    assert message.to == [ticket.requester.email]
+    assert "¿Puedes reiniciar el equipo?" in message.body
+
+
+@pytest.mark.usefixtures("run_tasks_inline")
+def test_internal_note_emails_nobody(open_ticket):
+    ticket, agent = open_ticket
+
+    response = comment(logged_in(agent), ticket, "Revisar el switch.", is_internal=True)
+
+    assert response.status_code == 201
+    assert mail.outbox == []
+
+
 def test_broker_outage_does_not_fail_the_committed_request(open_ticket, monkeypatch):
     def broker_down(*args):
         raise OperationalError("Error 111 connecting to redis:6379. Connection refused.")

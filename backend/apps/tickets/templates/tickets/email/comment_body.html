@@ -1,0 +1,14 @@
+{% extends "tickets/email/base.html" %}
+
+{% block content %}
+{% if to_requester %}
+<p>{{ comment.author.full_name }} ha respondido en tu incidencia <strong>{{ ticket.reference }}</strong> ("{{ ticket.title }}"):</p>
+{% else %}
+<p>{{ comment.author.full_name }} ha comentado en la incidencia <strong>{{ ticket.reference }}</strong> ("{{ ticket.title }}"), que tienes asignada:</p>
+{% endif %}
+{% comment %}linebreaksbr escapes the body first and only then turns line breaks into <br>.{% endcomment %}
+<blockquote style="margin:0 0 16px; padding:8px 16px; border-left:4px solid #d1d5db; color:#374151;">{{ comment.body|linebreaksbr }}</blockquote>
+<p style="color:#4b5563;">Para contestar, escribe un comentario en la incidencia: las respuestas a este correo no llegan a nadie.</p>
+{% endblock %}
+
+{% block signature %}{% if to_requester %}Equipo de soporte{% else %}HelpDesk SLA{% endif %}{% endblock %}

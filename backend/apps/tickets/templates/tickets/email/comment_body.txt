@@ -1,0 +1,12 @@
+{% autoescape off %}Hola, {{ recipient.full_name }}:
+
+{% if to_requester %}{{ comment.author.full_name }} ha respondido en tu incidencia {{ ticket.reference }} ("{{ ticket.title }}"):
+{% else %}{{ comment.author.full_name }} ha comentado en la incidencia {{ ticket.reference }} ("{{ ticket.title }}"), que tienes asignada:
+{% endif %}
+{{ comment.body }}
+
+Para contestar, escribe un comentario en la incidencia: las respuestas a este correo no llegan a nadie.
+Ver la incidencia: {{ ticket_url }}
+
+{% if to_requester %}Equipo de soporte{% else %}HelpDesk SLA{% endif %}
+{% endautoescape %}

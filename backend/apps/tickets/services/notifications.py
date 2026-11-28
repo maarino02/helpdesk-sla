@@ -1,14 +1,15 @@
-"""Email notifications for status changes and SLA alerts.
+"""Email notifications for status changes, SLA alerts and public comments.
 
 Flow (at least once delivery):
 1. The service that creates the source row (transition() for a ticket_event,
-   the SLA job for an sla_alert) calls notify_on_commit(kind, id).
+   the SLA job for an sla_alert, add_comment() for a ticket_comment) calls
+   notify_on_commit(kind, id).
 2. After the commit, the `notify` task reads the source and decides the
    recipients with the data current at that moment.
 3. One `send_notification` task per recipient renders and sends one email,
    so an SMTP failure retries only that email.
 
-Only ids travel through the broker: both sources are immutable rows, so the
+Only ids travel through the broker: every source is an immutable row, so the
 email describes exactly what happened at commit time, even if the ticket
 changed afterwards, and no personal data is stored in Redis.
 
@@ -37,12 +38,14 @@ from apps.tickets.models import (
     SlaAlert,
     Status,
     Ticket,
+    TicketComment,
     TicketEvent,
 )
 
 STATUS_CHANGE = "status_change"
 SLA_ALERT = "sla_alert"
-KINDS = (STATUS_CHANGE, SLA_ALERT)
+COMMENT = "comment"
+KINDS = (STATUS_CHANGE, SLA_ALERT, COMMENT)
 
 # Status changes the requester hears about: the ones that need their action
 # (pending), give them a chance to react (resolved) or end the ticket (closed).
@@ -97,6 +100,8 @@ def recipient_ids(kind: str, source_id: int) -> list[int]:
         return _status_change_recipients(_event(source_id))
     if kind == SLA_ALERT:
         return _alert_recipients(_alert(source_id))
+    if kind == COMMENT:
+        return _comment_recipients(_comment(source_id))
     raise ValueError(f"Unknown notification kind {kind!r}.")
 
 
@@ -120,6 +125,24 @@ def _alert_recipients(alert: SlaAlert) -> list[int]:
         .order_by("pk")
         .values_list("pk", flat=True)
     )
+
+
+def _comment_recipients(comment: TicketComment) -> list[int]:
+    # add_comment() never enqueues internal notes; checked again because the
+    # recipient here is a client, who must never read one.
+    if comment.is_internal:
+        return []
+    ticket = comment.ticket
+    # The other side of the conversation, which is never the author: the assignee
+    # is staff (checked by the services that assign) and the requester is always
+    # a client (composite foreign key in the database).
+    # A client comment on an unassigned ticket notifies nobody: it is in the
+    # unassigned queue already, and if it waits too long the SLA alerts escalate
+    # it to the admins.
+    other_side = ticket.assignee if comment.author.role == Role.CLIENT else ticket.requester
+    if other_side is None or not other_side.is_active:
+        return []
+    return [other_side.pk]
 
 
 # Messages
@@ -158,6 +181,14 @@ def build_message(kind: str, source_id: int, recipient_id: int) -> EmailMultiAlt
             "time_zone": calendar.timezone,
             "as_admin": recipient_id != alert.ticket.assignee_id,
         }
+    elif kind == COMMENT:
+        comment = _comment(source_id)
+        template = "comment"
+        context = {
+            "ticket": comment.ticket,
+            "comment": comment,
+            "to_requester": recipient_id == comment.ticket.requester_id,
+        }
     else:
         raise ValueError(f"Unknown notification kind {kind!r}.")
 
@@ -188,6 +219,12 @@ def _event(event_id: int) -> TicketEvent:
     return TicketEvent.objects.select_related("ticket__organization", "ticket__requester").get(
         pk=event_id
     )
+
+
+def _comment(comment_id: int) -> TicketComment:
+    return TicketComment.objects.select_related(
+        "author", "ticket__requester", "ticket__assignee"
+    ).get(pk=comment_id)
 
 
 def _alert(alert_id: int) -> SlaAlert:
