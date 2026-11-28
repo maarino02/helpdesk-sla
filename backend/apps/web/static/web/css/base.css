@@ -105,6 +105,12 @@ main.narrow {
   max-width: 420px;
 }
 
+/* The ticket list: eight columns, most of them on one line, need more room
+   than pages of text. Narrower screens still scroll the table. */
+main.wide {
+  max-width: 1400px;
+}
+
 .card {
   padding: 24px;
   background: var(--color-surface);
@@ -280,6 +286,13 @@ textarea:focus {
 .tickets td.title {
   white-space: normal;
   min-width: 240px;
+}
+
+/* Client and assignee names may wrap too: with every column on one line the
+   table is wider than a 1280 px screen. */
+.tickets td.name {
+  white-space: normal;
+  min-width: 120px;
 }
 
 .tickets tbody tr:hover {

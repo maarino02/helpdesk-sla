@@ -56,8 +56,8 @@ function row(ticket) {
   ];
   if (staff) {
     cells.push(
-      el("td", { text: ticket.organization.name }),
-      el("td", { text: ticket.assignee?.full_name ?? "Sin asignar" }),
+      el("td", { className: "name", text: ticket.organization.name }),
+      el("td", { className: "name", text: ticket.assignee?.full_name ?? "Sin asignar" }),
     );
   }
   cells.push(el("td", { className: "date", text: formatDateTime(ticket.created_at) }));

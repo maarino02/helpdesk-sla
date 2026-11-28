@@ -118,6 +118,17 @@ def test_pages_with_a_session_start_hidden(client):
     assert "hidden" not in main("web:login")
 
 
+def test_only_the_ticket_list_uses_the_wide_layout(client):
+    # Overriding main_attributes replaces the default "hidden" too: it must be repeated.
+    def main_class(page):
+        [attributes] = tags(client.get(url(page)).content.decode(), "main")
+        return attributes.get("class")
+
+    assert main_class("web:tickets") == "wide"
+    assert main_class(("web:ticket", [7])) is None
+    assert main_class("web:dashboard") is None
+
+
 @pytest.mark.parametrize("page", ["web:login", "web:ticket-new"])
 def test_forms_post_if_the_script_fails(client, page):
     # Without the script, a GET form would put what was typed (a password) in the URL.
