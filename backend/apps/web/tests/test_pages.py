@@ -78,6 +78,16 @@ def test_pages_render_without_inline_code(client, page):
 
 
 @pytest.mark.parametrize("page", PAGES, ids=lambda page: page[0])
+def test_pages_show_no_template_syntax(client, page):
+    # A {# #} comment spanning two lines is not a comment for Django: it is
+    # printed as text at the top of every page.
+    html = client.get(url(page)).content.decode()
+
+    for syntax in ("{#", "#}", "{%", "%}", "{{", "}}"):
+        assert syntax not in html, syntax
+
+
+@pytest.mark.parametrize("page", PAGES, ids=lambda page: page[0])
 def test_each_page_loads_one_module_that_exists(client, page):
     html = client.get(url(page)).content.decode()
 
